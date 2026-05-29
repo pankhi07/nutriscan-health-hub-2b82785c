@@ -34,6 +34,11 @@ const InputSchema = z.object({
   concerns: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
 });
 
+const BarcodeInputSchema = z.object({
+  barcode: z.string().trim().min(6).max(20).regex(/^\d+$/, "Barcode must be digits"),
+  concerns: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+});
+
 export const analyzeFoodImage = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => InputSchema.parse(input))
   .handler(async ({ data }) => {
