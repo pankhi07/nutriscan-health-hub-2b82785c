@@ -114,3 +114,88 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
       }
     }
   });
+
+export const analyzeBarcode = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => BarcodeInputSchema.parse(input))
+  .handler(async ({ data }) => {
+    const apiKey = process.env.LOVABLE_API_KEY;
+    if (!apiKey) throw new Error("AI is not configured");
+
+    const res = await fetch(
+      `https://world.openfoodfacts.org/api/v2/product/${data.barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
+      { headers: { "User-Agent": "NutriScan/1.0" } },
+    );
+    if (!res.ok) throw new Error("Product lookup failed");
+    const json = (await res.json()) as {
+      status?: number;
+      product?: {
+        product_name?: string;
+        brands?: string;
+        ingredients_text?: string;
+        ingredients_text_en?: string;
+        categories?: string;
+      };
+    };
+    if (json.status !== 1 || !json.product) {
+      throw new Error("Product not found in the food database. Try uploading the label instead.");
+    }
+    const p = json.product;
+    const ingredientsText = (p.ingredients_text_en || p.ingredients_text || "").trim();
+    if (!ingredientsText) {
+      throw new Error("No ingredient info on file for this barcode. Try uploading the label instead.");
+    }
+    const productName = [p.brands, p.product_name].filter(Boolean).join(" — ") || "Unknown product";
+
+    const gateway = createLovableAiGatewayProvider(apiKey);
+
+    const concernsText = data.concerns.length
+      ? `\n\nThe user has these personal health concerns: ${data.concerns.join(", ")}. Treat ingredients risky for these concerns as harmful (raise severity), explain WHY each flagged ingredient matters for these conditions, and tailor the alternatives.`
+      : "";
+
+    const schemaHint = `Return ONLY a JSON object (no markdown) with this exact shape:
+{
+  "product_name": string,
+  "ingredients": string[],
+  "harmful_ingredients": { "name": string, "reason": string, "severity": "low"|"medium"|"high" }[],
+  "health_score": number (0-100),
+  "summary": string,
+  "alternatives": { "name": string, "reason": string }[]
+}`;
+
+    const messages = [
+      {
+        role: "system" as const,
+        content:
+          "You are NutriScan, an expert nutritionist. Analyze the ingredient list of a packaged food. Flag harmful preservatives, excess sugar, palm oil, artificial colors, trans fats, HFCS, nitrates, MSG variants, artificial sweeteners, BHA/BHT. Give an honest health_score 0-100, explain WHY it's unhealthy in summary, and suggest healthier real-world alternatives. " +
+          schemaHint +
+          concernsText,
+      },
+      {
+        role: "user" as const,
+        content: `Product: ${productName}\n${p.categories ? `Categories: ${p.categories}\n` : ""}Ingredients: ${ingredientsText}\n\nReturn the JSON object only.`,
+      },
+    ];
+
+    const extractJson = (raw: string): unknown => {
+      const t = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      try { return JSON.parse(t); } catch {
+        const s = t.indexOf("{"), e = t.lastIndexOf("}");
+        if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
+        throw new Error("Model did not return JSON");
+      }
+    };
+
+    const run = async (modelId: string) => {
+      const { text } = await generateText({ model: gateway(modelId), messages });
+      const parsed = extractJson(text) as Record<string, unknown>;
+      if (!parsed.product_name) parsed.product_name = productName;
+      return AnalysisSchema.parse(parsed);
+    };
+
+    try {
+      return { analysis: await run("google/gemini-2.5-flash") };
+    } catch (err) {
+      console.error("Barcode analysis flash failed", err);
+      return { analysis: await run("google/gemini-2.5-pro") };
+    }
+  });
