@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
+  Barcode,
   Camera,
   Check,
   Heart,
@@ -17,10 +18,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
+import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { HealthScore } from "@/components/HealthScore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { analyzeFoodImage, type ScanAnalysis } from "@/lib/scans.functions";
+import { analyzeBarcode, analyzeFoodImage, type ScanAnalysis } from "@/lib/scans.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -280,9 +282,11 @@ function ScanStep({
   onBack: () => void;
 }) {
   const analyze = useServerFn(analyzeFoodImage);
+  const analyzeCode = useServerFn(analyzeBarcode);
   const uploadRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return toast.error("Please choose an image");
@@ -294,6 +298,21 @@ function ScanStep({
       onResult(analysis);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to analyze image");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBarcode = async (code: string) => {
+    setScanning(false);
+    setLoading(true);
+    setPreview(null);
+    toast.success(`Barcode ${code} detected`);
+    try {
+      const { analysis } = await analyzeCode({ data: { barcode: code, concerns } });
+      onResult(analysis);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't look up that barcode");
     } finally {
       setLoading(false);
     }
@@ -339,12 +358,15 @@ function ScanStep({
         )}
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Button onClick={() => uploadRef.current?.click()} variant="outline" disabled={loading} size="lg">
           <Upload className="mr-2 h-4 w-4" /> Upload
         </Button>
-        <Button onClick={() => cameraRef.current?.click()} disabled={loading} size="lg" className="shadow-[var(--shadow-soft)]">
-          <Camera className="mr-2 h-4 w-4" /> Camera
+        <Button onClick={() => cameraRef.current?.click()} variant="outline" disabled={loading} size="lg">
+          <Camera className="mr-2 h-4 w-4" /> Photo
+        </Button>
+        <Button onClick={() => setScanning(true)} disabled={loading} size="lg" className="shadow-[var(--shadow-soft)]">
+          <Barcode className="mr-2 h-4 w-4" /> Barcode
         </Button>
       </div>
       <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
@@ -358,6 +380,10 @@ function ScanStep({
       >
         ← Edit concerns
       </button>
+
+      {scanning && (
+        <BarcodeScanner onDetected={handleBarcode} onClose={() => setScanning(false)} />
+      )}
     </div>
   );
 }
