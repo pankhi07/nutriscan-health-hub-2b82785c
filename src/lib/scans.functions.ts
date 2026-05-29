@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 
 const AnalysisSchema = z.object({
@@ -32,27 +31,19 @@ export type ScanAnalysis = z.infer<typeof AnalysisSchema>;
 
 const InputSchema = z.object({
   imageDataUrl: z.string().min(20),
-  imageUrl: z.string().url().nullable().optional(),
+  concerns: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
 });
 
 export const analyzeFoodImage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => InputSchema.parse(input))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data }) => {
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("AI is not configured");
 
     const gateway = createLovableAiGatewayProvider(apiKey);
     const model = gateway("google/gemini-2.5-flash");
 
-    const { supabase, userId } = context;
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("health_concerns")
-      .eq("id", userId)
-      .maybeSingle();
-    const concerns = (profile?.health_concerns ?? []) as string[];
+    const concerns = data.concerns;
     const concernsText = concerns.length
       ? `\n\nThe user has these personal health concerns: ${concerns.join(", ")}. Treat ingredients risky for these concerns as harmful (raise severity), explain WHY each flagged ingredient matters for these conditions, and tailor the alternatives so they are safe and suitable for someone with these concerns.`
       : "";
@@ -77,44 +68,5 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
       ],
     });
 
-    const { data: inserted, error } = await supabase
-      .from("scans")
-      .insert({
-        user_id: userId,
-        product_name: output.product_name,
-        image_url: data.imageUrl ?? null,
-        ingredients: output.ingredients,
-        harmful_ingredients: output.harmful_ingredients,
-        health_score: Math.round(output.health_score),
-        summary: output.summary,
-        alternatives: output.alternatives,
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return { scan: inserted, analysis: output };
-  });
-
-export const getScans = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase } = context;
-    const { data, error } = await supabase
-      .from("scans")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (error) throw new Error(error.message);
-    return { scans: data ?? [] };
-  });
-
-export const deleteScan = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const { error } = await supabase.from("scans").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
+    return { analysis: output };
   });
