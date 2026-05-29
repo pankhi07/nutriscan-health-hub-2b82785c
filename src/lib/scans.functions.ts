@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText, NoObjectGeneratedError, Output } from "ai";
+import { generateText } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 
@@ -48,47 +48,64 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
       ? `\n\nThe user has these personal health concerns: ${concerns.join(", ")}. Treat ingredients risky for these concerns as harmful (raise severity), explain WHY each flagged ingredient matters for these conditions, and tailor the alternatives so they are safe and suitable for someone with these concerns.`
       : "";
 
+    const schemaHint = `Return ONLY a JSON object (no markdown, no prose) with this exact shape:
+{
+  "product_name": string,
+  "ingredients": string[],
+  "harmful_ingredients": { "name": string, "reason": string, "severity": "low"|"medium"|"high" }[],
+  "health_score": number (0-100),
+  "summary": string,
+  "alternatives": { "name": string, "reason": string }[]
+}`;
+
     const messages = [
       {
         role: "system" as const,
         content:
-          "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary. ALWAYS respond with a valid JSON object that matches the requested schema exactly — no prose, no markdown." +
+          "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary. " +
+          schemaHint +
           concernsText,
       },
       {
         role: "user" as const,
         content: [
-          { type: "text" as const, text: "Analyze this packaged food label and return the structured JSON." },
+          { type: "text" as const, text: "Analyze this packaged food label. Respond with the JSON object only." },
           { type: "image" as const, image: data.imageDataUrl },
         ],
       },
     ];
 
+    const extractJson = (raw: string): unknown => {
+      const trimmed = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        const start = trimmed.indexOf("{");
+        const end = trimmed.lastIndexOf("}");
+        if (start !== -1 && end > start) {
+          return JSON.parse(trimmed.slice(start, end + 1));
+        }
+        throw new Error("Model did not return JSON");
+      }
+    };
+
     const tryGenerate = async (modelId: string) => {
-      const m = gateway(modelId);
-      const { output } = await generateText({
-        model: m,
-        output: Output.object({ schema: AnalysisSchema }),
-        messages,
-      });
-      return output;
+      const { text } = await generateText({ model: gateway(modelId), messages });
+      const parsed = extractJson(text);
+      return AnalysisSchema.parse(parsed);
     };
 
     try {
-      const output = await tryGenerate("google/gemini-2.5-flash");
-      return { analysis: output };
+      return { analysis: await tryGenerate("google/gemini-2.5-flash") };
     } catch (err) {
-      if (NoObjectGeneratedError.isInstance(err)) {
-        try {
-          const output = await tryGenerate("google/gemini-2.5-pro");
-          return { analysis: output };
-        } catch (err2) {
-          console.error("NutriScan structured output failed", err2);
-          throw new Error(
-            "Couldn't read this image clearly. Try a sharper, well-lit photo of the ingredients list.",
-          );
-        }
+      console.error("NutriScan first attempt failed", err);
+      try {
+        return { analysis: await tryGenerate("google/gemini-2.5-pro") };
+      } catch (err2) {
+        console.error("NutriScan second attempt failed", err2);
+        throw new Error(
+          "Couldn't read this image clearly. Try a sharper, well-lit photo of the ingredients list.",
+        );
       }
-      throw err;
     }
   });
