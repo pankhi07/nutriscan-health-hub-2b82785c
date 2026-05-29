@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText, Output } from "ai";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 
@@ -48,25 +48,47 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
       ? `\n\nThe user has these personal health concerns: ${concerns.join(", ")}. Treat ingredients risky for these concerns as harmful (raise severity), explain WHY each flagged ingredient matters for these conditions, and tailor the alternatives so they are safe and suitable for someone with these concerns.`
       : "";
 
-    const { output } = await generateText({
-      model,
-      output: Output.object({ schema: AnalysisSchema }),
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients that are widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, high-fructose corn syrup, nitrates, MSG variants, excess sodium, artificial sweeteners like aspartame, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary." +
-            concernsText,
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Analyze this packaged food label." },
-            { type: "image", image: data.imageDataUrl },
-          ],
-        },
-      ],
-    });
+    const messages = [
+      {
+        role: "system" as const,
+        content:
+          "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary. ALWAYS respond with a valid JSON object that matches the requested schema exactly — no prose, no markdown." +
+          concernsText,
+      },
+      {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: "Analyze this packaged food label and return the structured JSON." },
+          { type: "image" as const, image: data.imageDataUrl },
+        ],
+      },
+    ];
 
-    return { analysis: output };
+    const tryGenerate = async (modelId: string) => {
+      const m = gateway(modelId);
+      const { output } = await generateText({
+        model: m,
+        output: Output.object({ schema: AnalysisSchema }),
+        messages,
+      });
+      return output;
+    };
+
+    try {
+      const output = await tryGenerate("google/gemini-2.5-flash");
+      return { analysis: output };
+    } catch (err) {
+      if (NoObjectGeneratedError.isInstance(err)) {
+        try {
+          const output = await tryGenerate("google/gemini-2.5-pro");
+          return { analysis: output };
+        } catch (err2) {
+          console.error("NutriScan structured output failed", err2);
+          throw new Error(
+            "Couldn't read this image clearly. Try a sharper, well-lit photo of the ingredients list.",
+          );
+        }
+      }
+      throw err;
+    }
   });
