@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
+import pkg from "@zxing/library";
+const { BarcodeFormat, DecodeHintType } = pkg;
 import { X } from "lucide-react";
 
 export function BarcodeScanner({
