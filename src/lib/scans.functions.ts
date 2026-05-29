@@ -45,6 +45,18 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
     const gateway = createLovableAiGatewayProvider(apiKey);
     const model = gateway("google/gemini-2.5-flash");
 
+    const { supabase, userId } = context;
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("health_concerns")
+      .eq("id", userId)
+      .maybeSingle();
+    const concerns = (profile?.health_concerns ?? []) as string[];
+    const concernsText = concerns.length
+      ? `\n\nThe user has these personal health concerns: ${concerns.join(", ")}. Treat ingredients risky for these concerns as harmful (raise severity), explain WHY each flagged ingredient matters for these conditions, and tailor the alternatives so they are safe and suitable for someone with these concerns.`
+      : "";
+
     const { output } = await generateText({
       model,
       output: Output.object({ schema: AnalysisSchema }),
@@ -52,7 +64,8 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
         {
           role: "system",
           content:
-            "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients that are widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, high-fructose corn syrup, nitrates, MSG variants, excess sodium, artificial sweeteners like aspartame, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary.",
+            "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients that are widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, high-fructose corn syrup, nitrates, MSG variants, excess sodium, artificial sweeteners like aspartame, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary." +
+            concernsText,
         },
         {
           role: "user",
@@ -64,7 +77,6 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
       ],
     });
 
-    const { supabase, userId } = context;
     const { data: inserted, error } = await supabase
       .from("scans")
       .insert({

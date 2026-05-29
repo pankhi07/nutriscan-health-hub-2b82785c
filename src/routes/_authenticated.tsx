@@ -11,9 +11,12 @@ export const Route = createFileRoute("/_authenticated")({
     }
   },
   component: () => (
-    <div className="min-h-screen bg-[image:var(--gradient-soft)]">
-      <AppHeader />
-      <Outlet />
+    <div className="relative min-h-screen overflow-hidden bg-background">
+      <div className="pointer-events-none absolute inset-0 bg-[image:var(--gradient-mesh)] opacity-60" />
+      <div className="relative">
+        <AppHeader />
+        <Outlet />
+      </div>
     </div>
   ),
 });

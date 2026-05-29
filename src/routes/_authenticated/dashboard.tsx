@@ -5,6 +5,7 @@ import { ScanLine, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { HealthScore } from "@/components/HealthScore";
+import { HealthConcerns } from "@/components/HealthConcerns";
 import { deleteScan, getScans } from "@/lib/scans.functions";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -36,41 +37,53 @@ function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4 animate-fade-in">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Your scans</h1>
+          <h1 className="text-4xl font-bold tracking-tight">
+            Your <span className="bg-[image:var(--gradient-primary)] bg-clip-text text-transparent">scans</span>
+          </h1>
           <p className="text-sm text-muted-foreground">{scans.length} scan{scans.length === 1 ? "" : "s"} so far.</p>
         </div>
         <Link to="/scan">
-          <Button size="lg" className="shadow-[var(--shadow-soft)]">
+          <Button size="lg" className="shadow-[var(--shadow-soft)] transition-all hover:shadow-[var(--shadow-glow)]">
             <ScanLine className="mr-2 h-5 w-5" /> New scan
           </Button>
         </Link>
       </div>
 
+      <div className="mb-8">
+        <HealthConcerns />
+      </div>
+
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-56 animate-pulse rounded-2xl border border-border bg-card" />
+            <div key={i} className="relative h-56 overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="absolute inset-0 animate-shimmer" />
+            </div>
           ))}
         </div>
       ) : scans.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-foreground">
+        <div className="animate-fade-in rounded-3xl border border-dashed border-border glass p-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 animate-float items-center justify-center rounded-2xl bg-[image:var(--gradient-primary)] text-primary-foreground shadow-[var(--shadow-soft)]">
             <ScanLine className="h-6 w-6" />
           </div>
           <h2 className="text-lg font-semibold">No scans yet</h2>
           <p className="mt-1 text-sm text-muted-foreground">Scan your first packaged food to see its health score.</p>
           <Link to="/scan" className="mt-6 inline-block">
-            <Button>Scan your first product</Button>
+            <Button className="shadow-[var(--shadow-soft)]">Scan your first product</Button>
           </Link>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {scans.map((scan) => {
+          {scans.map((scan, i) => {
             const harmful = Array.isArray(scan.harmful_ingredients) ? (scan.harmful_ingredients as { name: string }[]) : [];
             return (
-              <div key={scan.id} className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] transition hover:shadow-[var(--shadow-soft)]">
+              <div
+                key={scan.id}
+                style={{ animationDelay: `${i * 60}ms` }}
+                className="group animate-fade-in hover-lift flex flex-col gap-4 rounded-2xl border border-border/60 glass p-5 shadow-[var(--shadow-card)]"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-semibold">{scan.product_name ?? "Untitled product"}</h3>

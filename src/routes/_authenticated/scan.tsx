@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
-import { Camera, ShieldAlert, Sparkles, Upload, Leaf } from "lucide-react";
+import { Camera, ShieldAlert, Sparkles, Upload, Leaf, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { HealthScore } from "@/components/HealthScore";
+import { HealthConcerns } from "@/components/HealthConcerns";
 import { analyzeFoodImage, type ScanAnalysis } from "@/lib/scans.functions";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -29,6 +30,7 @@ function ScanPage() {
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanAnalysis | null>(null);
+  const [showConcerns, setShowConcerns] = useState(false);
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -73,23 +75,40 @@ function ScanPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Scan a food label</h1>
-        <p className="text-sm text-muted-foreground">Upload a clear photo of the ingredients list.</p>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4 animate-fade-in">
+        <div>
+          <h1 className="text-4xl font-bold tracking-tight">
+            Scan a <span className="bg-[image:var(--gradient-primary)] bg-clip-text text-transparent">food label</span>
+          </h1>
+          <p className="text-sm text-muted-foreground">Upload a clear photo of the ingredients list.</p>
+        </div>
+        <Button variant="outline" size="sm" className="glass" onClick={() => setShowConcerns((v) => !v)}>
+          <Heart className="mr-2 h-4 w-4 text-primary" />
+          {showConcerns ? "Hide" : "My"} concerns
+        </Button>
       </div>
 
+      {showConcerns && (
+        <div className="mb-6">
+          <HealthConcerns />
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+        <div className="animate-fade-in rounded-3xl border border-border/60 glass p-6 shadow-[var(--shadow-card)]">
           <div
-            className="flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-border bg-secondary/50 text-muted-foreground"
+            className="relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-border bg-secondary/50 text-muted-foreground transition-all hover:border-primary/50"
           >
             {preview ? (
-              <img src={preview} alt="Food label preview" className="h-full w-full object-cover" />
+              <img src={preview} alt="Food label preview" className="h-full w-full animate-scale-in object-cover" />
             ) : (
               <>
-                <Camera className="mb-3 h-10 w-10" />
+                <Camera className="mb-3 h-10 w-10 animate-float" />
                 <p className="text-sm">No image yet</p>
               </>
+            )}
+            {loading && (
+              <div className="absolute inset-0 animate-shimmer" />
             )}
           </div>
 
@@ -97,7 +116,7 @@ function ScanPage() {
             <Button onClick={() => inputRef.current?.click()} variant="outline" disabled={loading}>
               <Upload className="mr-2 h-4 w-4" /> Upload
             </Button>
-            <Button onClick={() => cameraRef.current?.click()} disabled={loading}>
+            <Button onClick={() => cameraRef.current?.click()} disabled={loading} className="shadow-[var(--shadow-soft)]">
               <Camera className="mr-2 h-4 w-4" /> Camera
             </Button>
           </div>
@@ -118,17 +137,20 @@ function ScanPage() {
           />
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+        <div className="animate-fade-in rounded-3xl border border-border/60 glass p-6 shadow-[var(--shadow-card)]" style={{ animationDelay: "100ms" }}>
           {loading ? (
             <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-full bg-[image:var(--gradient-primary)]">
-                <Sparkles className="h-6 w-6 text-primary-foreground" />
+              <div className="relative">
+                <div className="absolute inset-0 animate-pulse-glow rounded-full" />
+                <div className="relative flex h-14 w-14 animate-float items-center justify-center rounded-full bg-[image:var(--gradient-primary)] shadow-[var(--shadow-soft)]">
+                  <Sparkles className="h-6 w-6 animate-spin text-primary-foreground" style={{ animationDuration: "3s" }} />
+                </div>
               </div>
-              <p className="text-sm font-medium">Analyzing ingredients…</p>
+              <p className="mt-2 text-sm font-medium">Analyzing ingredients…</p>
               <p className="text-xs text-muted-foreground">Reading the label and scoring it</p>
             </div>
           ) : result ? (
-            <ResultView result={result} />
+            <div className="animate-fade-in"><ResultView result={result} /></div>
           ) : (
             <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
               <ScanPlaceholder />
@@ -144,7 +166,7 @@ function ScanPage() {
 
 function ScanPlaceholder() {
   return (
-    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
+    <div className="flex h-14 w-14 animate-float items-center justify-center rounded-2xl bg-[image:var(--gradient-primary)] text-primary-foreground shadow-[var(--shadow-soft)]">
       <Leaf className="h-6 w-6" />
     </div>
   );
@@ -163,22 +185,23 @@ function ResultView({ result }: { result: ScanAnalysis }) {
       </div>
 
       {result.summary && (
-        <p className="rounded-xl bg-secondary px-4 py-3 text-sm text-secondary-foreground">{result.summary}</p>
+        <p className="animate-fade-in rounded-xl bg-secondary px-4 py-3 text-sm text-secondary-foreground">{result.summary}</p>
       )}
 
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Ingredients</h3>
         <div className="flex flex-wrap gap-2">
           {result.ingredients.length === 0 && <span className="text-sm text-muted-foreground">No ingredients detected.</span>}
-          {result.ingredients.map((ing) => {
+          {result.ingredients.map((ing, i) => {
             const bad = harmfulNames.has(ing.toLowerCase());
             return (
               <span
                 key={ing}
+                style={{ animationDelay: `${i * 30}ms` }}
                 className={
                   bad
-                    ? "inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--destructive)_12%,transparent)] px-3 py-1 text-xs font-medium text-destructive"
-                    : "inline-flex items-center rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground"
+                    ? "animate-scale-in inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--destructive)_12%,transparent)] px-3 py-1 text-xs font-medium text-destructive ring-1 ring-destructive/20"
+                    : "animate-scale-in inline-flex items-center rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground"
                 }
               >
                 {bad && <ShieldAlert className="h-3 w-3" />}
@@ -193,8 +216,12 @@ function ResultView({ result }: { result: ScanAnalysis }) {
         <div>
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-destructive">Harmful or to limit</h3>
           <div className="space-y-2">
-            {result.harmful_ingredients.map((h) => (
-              <div key={h.name} className="rounded-lg border border-[color-mix(in_oklab,var(--destructive)_30%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_8%,transparent)] p-3">
+            {result.harmful_ingredients.map((h, i) => (
+              <div
+                key={h.name}
+                style={{ animationDelay: `${i * 80}ms` }}
+                className="animate-fade-in rounded-xl border border-[color-mix(in_oklab,var(--destructive)_30%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_8%,transparent)] p-3"
+              >
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-destructive">{h.name}</span>
                   <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-bold uppercase text-destructive">
@@ -212,8 +239,12 @@ function ResultView({ result }: { result: ScanAnalysis }) {
         <div>
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--success)]">Healthier alternatives</h3>
           <div className="space-y-2">
-            {result.alternatives.map((a) => (
-              <div key={a.name} className="rounded-lg border border-[color-mix(in_oklab,var(--success)_25%,transparent)] bg-[color-mix(in_oklab,var(--success)_8%,transparent)] p-3">
+            {result.alternatives.map((a, i) => (
+              <div
+                key={a.name}
+                style={{ animationDelay: `${i * 80}ms` }}
+                className="animate-fade-in rounded-xl border border-[color-mix(in_oklab,var(--success)_25%,transparent)] bg-[color-mix(in_oklab,var(--success)_8%,transparent)] p-3 hover-lift"
+              >
                 <p className="font-semibold text-foreground">{a.name}</p>
                 <p className="mt-0.5 text-sm text-muted-foreground">{a.reason}</p>
               </div>
