@@ -287,6 +287,7 @@ function ScanStep({
   const cameraRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return toast.error("Please choose an image");
@@ -307,10 +308,15 @@ function ScanStep({
     setScanning(false);
     setLoading(true);
     setPreview(null);
+    setNotFoundCode(null);
     toast.success(`Barcode ${code} detected`);
     try {
-      const { analysis } = await analyzeCode({ data: { barcode: code, concerns } });
-      onResult(analysis);
+      const res = await analyzeCode({ data: { barcode: code, concerns } });
+      if (res.notFound) {
+        setNotFoundCode(code);
+      } else {
+        onResult(res.analysis);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't look up that barcode");
     } finally {
@@ -383,6 +389,35 @@ function ScanStep({
 
       {scanning && (
         <BarcodeScanner onDetected={handleBarcode} onClose={() => setScanning(false)} />
+      )}
+
+      {notFoundCode && (
+        <div className="animate-slide-up mt-5 rounded-2xl border border-primary/30 bg-primary/5 p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <ShieldAlert className="h-4 w-4" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">
+                We scanned barcode <span className="font-mono">{notFoundCode}</span>, but it isn't in our food database yet.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Many regional and Indian products aren't catalogued. Snap a photo of the ingredients list instead — we'll analyze it the same way.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => { setNotFoundCode(null); cameraRef.current?.click(); }}>
+                  <Camera className="mr-2 h-4 w-4" /> Take photo of label
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setNotFoundCode(null); uploadRef.current?.click(); }}>
+                  <Upload className="mr-2 h-4 w-4" /> Upload image
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setNotFoundCode(null); setScanning(true); }}>
+                  Try another barcode
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
