@@ -121,11 +121,19 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("AI is not configured");
 
-    const res = await fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${data.barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
-      { headers: { "User-Agent": "NutriScan/1.0" } },
-    );
-    if (!res.ok) throw new Error("Product lookup failed");
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://world.openfoodfacts.org/api/v2/product/${data.barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
+        { headers: { "User-Agent": "NutriScan/1.0 (https://nutriscan.app)" } },
+      );
+    } catch {
+      throw new Error("Network error reaching the food database. Check your connection and try again.");
+    }
+    if (res.status === 404) {
+      return { notFound: true as const, barcode: data.barcode };
+    }
+    if (!res.ok) throw new Error(`Food database returned ${res.status}. Try again in a moment.`);
     const json = (await res.json()) as {
       status?: number;
       product?: {
@@ -137,12 +145,12 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
       };
     };
     if (json.status !== 1 || !json.product) {
-      throw new Error("Product not found in the food database. Try uploading the label instead.");
+      return { notFound: true as const, barcode: data.barcode };
     }
     const p = json.product;
     const ingredientsText = (p.ingredients_text_en || p.ingredients_text || "").trim();
     if (!ingredientsText) {
-      throw new Error("No ingredient info on file for this barcode. Try uploading the label instead.");
+      return { notFound: true as const, barcode: data.barcode, reason: "no-ingredients" as const };
     }
     const productName = [p.brands, p.product_name].filter(Boolean).join(" — ") || "Unknown product";
 
@@ -193,9 +201,9 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
     };
 
     try {
-      return { analysis: await run("google/gemini-2.5-flash") };
+      return { notFound: false as const, analysis: await run("google/gemini-2.5-flash") };
     } catch (err) {
       console.error("Barcode analysis flash failed", err);
-      return { analysis: await run("google/gemini-2.5-pro") };
+      return { notFound: false as const, analysis: await run("google/gemini-2.5-pro") };
     }
   });
