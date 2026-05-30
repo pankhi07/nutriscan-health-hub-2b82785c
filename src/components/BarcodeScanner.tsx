@@ -31,23 +31,38 @@ export function BarcodeScanner({
     hints.set(DecodeHintType.TRY_HARDER, true);
     const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
     let controls: { stop: () => void } | null = null;
+    let activeStream: MediaStream | null = null;
 
     (async () => {
       try {
-        controls = await reader.decodeFromVideoDevice(
-          { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } as unknown as string,
-          videoRef.current!,
-          (result) => {
+        // Acquire camera manually so we can use facingMode + graceful fallbacks.
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        activeStream = stream;
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+
+        controls = await reader.decodeFromVideoElement(video, (result) => {
             if (result && !detectedRef.current) {
               detectedRef.current = true;
               try { navigator.vibrate?.(60); } catch { /* ignore */ }
               setFlash(true);
               onDetected(result.getText());
             }
-          },
-        );
-        const stream = videoRef.current?.srcObject as MediaStream | null;
-        const track = stream?.getVideoTracks?.()[0] ?? null;
+        });
+        const track = stream.getVideoTracks()[0] ?? null;
         trackRef.current = track;
         const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
         if (caps.torch) setTorchSupported(true);
@@ -58,6 +73,7 @@ export function BarcodeScanner({
 
     return () => {
       controls?.stop();
+      activeStream?.getTracks().forEach((t) => t.stop());
       trackRef.current = null;
     };
   }, [onDetected]);
