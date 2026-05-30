@@ -287,6 +287,7 @@ function ScanStep({
   const cameraRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return toast.error("Please choose an image");
@@ -307,10 +308,15 @@ function ScanStep({
     setScanning(false);
     setLoading(true);
     setPreview(null);
+    setNotFoundCode(null);
     toast.success(`Barcode ${code} detected`);
     try {
-      const { analysis } = await analyzeCode({ data: { barcode: code, concerns } });
-      onResult(analysis);
+      const res = await analyzeCode({ data: { barcode: code, concerns } });
+      if (res.notFound) {
+        setNotFoundCode(code);
+      } else {
+        onResult(res.analysis);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't look up that barcode");
     } finally {
