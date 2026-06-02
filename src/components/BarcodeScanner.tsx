@@ -4,6 +4,23 @@ import zxingPkg from "@zxing/library";
 const { BarcodeFormat, DecodeHintType } = zxingPkg;
 import { Flashlight, X } from "lucide-react";
 
+const GTIN_LENGTHS = new Set([8, 12, 13, 14]);
+
+function isValidGtin(code: string) {
+  if (!GTIN_LENGTHS.has(code.length) || !/^\d+$/.test(code)) return false;
+
+  let sum = 0;
+  let weight = 3;
+
+  for (let i = code.length - 2; i >= 0; i -= 1) {
+    sum += Number(code[i]) * weight;
+    weight = weight === 3 ? 1 : 3;
+  }
+
+  const expectedCheckDigit = (10 - (sum % 10)) % 10;
+  return expectedCheckDigit === Number(code.at(-1));
+}
+
 export function BarcodeScanner({
   onDetected,
   onClose,
@@ -25,9 +42,6 @@ export function BarcodeScanner({
       BarcodeFormat.EAN_8,
       BarcodeFormat.UPC_A,
       BarcodeFormat.UPC_E,
-      BarcodeFormat.CODE_128,
-      BarcodeFormat.CODE_39,
-      BarcodeFormat.ITF,
     ]);
     hints.set(DecodeHintType.TRY_HARDER, true);
     const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
@@ -57,10 +71,12 @@ export function BarcodeScanner({
 
         controls = await reader.decodeFromVideoElement(video, (result) => {
             if (result && !detectedRef.current) {
+              const code = result.getText().trim();
+              if (!isValidGtin(code)) return;
               detectedRef.current = true;
               try { navigator.vibrate?.(60); } catch { /* ignore */ }
               setFlash(true);
-              onDetected(result.getText());
+              onDetected(code);
             }
         });
         const track = stream.getVideoTracks()[0] ?? null;
