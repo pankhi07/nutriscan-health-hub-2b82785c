@@ -35,9 +35,26 @@ const InputSchema = z.object({
 });
 
 const BarcodeInputSchema = z.object({
-  barcode: z.string().trim().min(6).max(20).regex(/^\d+$/, "Barcode must be digits"),
+  barcode: z.string().trim().min(3).max(20).regex(/^\d+$/, "Barcode must be digits"),
   concerns: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
 });
+
+const GTIN_LENGTHS = new Set([8, 12, 13, 14]);
+
+function isValidGtin(barcode: string) {
+  if (!GTIN_LENGTHS.has(barcode.length)) return false;
+
+  let sum = 0;
+  let weight = 3;
+
+  for (let i = barcode.length - 2; i >= 0; i -= 1) {
+    sum += Number(barcode[i]) * weight;
+    weight = weight === 3 ? 1 : 3;
+  }
+
+  const expectedCheckDigit = (10 - (sum % 10)) % 10;
+  return expectedCheckDigit === Number(barcode.at(-1));
+}
 
 export const analyzeFoodImage = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => InputSchema.parse(input))
@@ -121,17 +138,22 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("AI is not configured");
 
+    const barcode = data.barcode.trim();
+    if (!isValidGtin(barcode)) {
+      return { invalid: true as const, notFound: false as const, barcode };
+    }
+
     let res: Response;
     try {
       res = await fetch(
-        `https://world.openfoodfacts.org/api/v2/product/${data.barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
+        `https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
         { headers: { "User-Agent": "NutriScan/1.0 (https://nutriscan.app)" } },
       );
     } catch {
       throw new Error("Network error reaching the food database. Check your connection and try again.");
     }
     if (res.status === 404) {
-      return { notFound: true as const, barcode: data.barcode };
+      return { invalid: false as const, notFound: true as const, barcode };
     }
     if (!res.ok) throw new Error(`Food database returned ${res.status}. Try again in a moment.`);
     const json = (await res.json()) as {
@@ -145,12 +167,12 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
       };
     };
     if (json.status !== 1 || !json.product) {
-      return { notFound: true as const, barcode: data.barcode };
+      return { invalid: false as const, notFound: true as const, barcode };
     }
     const p = json.product;
     const ingredientsText = (p.ingredients_text_en || p.ingredients_text || "").trim();
     if (!ingredientsText) {
-      return { notFound: true as const, barcode: data.barcode, reason: "no-ingredients" as const };
+      return { invalid: false as const, notFound: true as const, barcode, reason: "no-ingredients" as const };
     }
     const productName = [p.brands, p.product_name].filter(Boolean).join(" — ") || "Unknown product";
 
@@ -201,9 +223,9 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
     };
 
     try {
-      return { notFound: false as const, analysis: await run("google/gemini-2.5-flash") };
+      return { invalid: false as const, notFound: false as const, analysis: await run("google/gemini-2.5-flash") };
     } catch (err) {
       console.error("Barcode analysis flash failed", err);
-      return { notFound: false as const, analysis: await run("google/gemini-2.5-pro") };
+      return { invalid: false as const, notFound: false as const, analysis: await run("google/gemini-2.5-pro") };
     }
   });
