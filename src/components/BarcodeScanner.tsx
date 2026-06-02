@@ -53,9 +53,7 @@ export function BarcodeScanner({
       hints.set(DecodeHintType.TRY_HARDER, true);
       const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
 
-    (async () => {
       try {
-        // Acquire camera manually so we can use facingMode + graceful fallbacks.
         let stream: MediaStream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
@@ -75,14 +73,14 @@ export function BarcodeScanner({
         await video.play().catch(() => {});
 
         controls = await reader.decodeFromVideoElement(video, (result) => {
-            if (result && !detectedRef.current) {
-              const code = result.getText().trim();
-              if (!isValidGtin(code)) return;
-              detectedRef.current = true;
-              try { navigator.vibrate?.(60); } catch { /* ignore */ }
-              setFlash(true);
-              onDetected(code);
-            }
+          if (result && !detectedRef.current) {
+            const code = result.getText().trim();
+            if (!isValidGtin(code)) return;
+            detectedRef.current = true;
+            try { navigator.vibrate?.(60); } catch { /* ignore */ }
+            setFlash(true);
+            onDetected(code);
+          }
         });
         const track = stream.getVideoTracks()[0] ?? null;
         trackRef.current = track;
@@ -94,6 +92,7 @@ export function BarcodeScanner({
     })();
 
     return () => {
+      cancelled = true;
       controls?.stop();
       activeStream?.getTracks().forEach((t) => t.stop());
       trackRef.current = null;
