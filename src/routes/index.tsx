@@ -95,7 +95,7 @@ function Index() {
               />
             )}
             {step === "result" && result && (
-              <ResultStep result={result} preview={preview} onReset={reset} />
+              <ResultStep result={result} preview={preview} concerns={concerns} onReset={reset} />
             )}
           </div>
         </main>
