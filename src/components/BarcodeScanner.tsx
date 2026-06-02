@@ -34,17 +34,24 @@ export function BarcodeScanner({
   const trackRef = useRef<MediaStreamTrack | null>(null);
 
   useEffect(() => {
-    const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
-    ]);
-    hints.set(DecodeHintType.TRY_HARDER, true);
-    const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
+    let cancelled = false;
     let controls: { stop: () => void } | null = null;
     let activeStream: MediaStream | null = null;
+
+    (async () => {
+      const zxing = await import("@zxing/library");
+      const { BarcodeFormat, DecodeHintType } = zxing;
+      if (cancelled) return;
+
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+      ]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
 
     (async () => {
       try {
