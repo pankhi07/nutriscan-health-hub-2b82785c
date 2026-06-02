@@ -95,7 +95,7 @@ function Index() {
               />
             )}
             {step === "result" && result && (
-              <ResultStep result={result} preview={preview} onReset={reset} />
+              <ResultStep result={result} preview={preview} concerns={concerns} onReset={reset} />
             )}
           </div>
         </main>
@@ -438,15 +438,34 @@ function ScanStep({
 function ResultStep({
   result,
   preview,
+  concerns,
   onReset,
 }: {
   result: ScanAnalysis;
   preview: string | null;
+  concerns: string[];
   onReset: () => void;
 }) {
   const harmfulNames = new Set(result.harmful_ingredients.map((h) => h.name.toLowerCase()));
   return (
     <div className="animate-slide-up space-y-6">
+      {concerns.length > 0 && (
+        <div className="rounded-3xl border border-[color-mix(in_oklab,var(--primary)_30%,transparent)] bg-[color-mix(in_oklab,var(--primary)_8%,transparent)] p-5 shadow-[var(--shadow-card)] sm:p-6">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-primary">Your concerns</p>
+          <div className="flex flex-wrap gap-2">
+            {concerns.map((c) => (
+              <span
+                key={c}
+                className="inline-flex items-center rounded-full bg-[image:var(--gradient-primary)] px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-soft)]"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">Results are personalized based on these concerns.</p>
+        </div>
+      )}
+
       <div className="relative overflow-hidden rounded-3xl border border-border/60 glass p-6 shadow-[var(--shadow-card)] sm:p-8">
         <div className="flex items-center gap-4">
           {preview && (

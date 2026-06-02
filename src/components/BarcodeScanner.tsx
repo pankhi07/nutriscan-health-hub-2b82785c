@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { Flashlight, X } from "lucide-react";
 
 const GTIN_LENGTHS = new Set([8, 12, 13, 14]);
@@ -35,21 +34,26 @@ export function BarcodeScanner({
   const trackRef = useRef<MediaStreamTrack | null>(null);
 
   useEffect(() => {
-    const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
-    ]);
-    hints.set(DecodeHintType.TRY_HARDER, true);
-    const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
+    let cancelled = false;
     let controls: { stop: () => void } | null = null;
     let activeStream: MediaStream | null = null;
 
     (async () => {
+      const zxing = await import("@zxing/library");
+      const { BarcodeFormat, DecodeHintType } = zxing;
+      if (cancelled) return;
+
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+      ]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
+
       try {
-        // Acquire camera manually so we can use facingMode + graceful fallbacks.
         let stream: MediaStream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
@@ -69,14 +73,14 @@ export function BarcodeScanner({
         await video.play().catch(() => {});
 
         controls = await reader.decodeFromVideoElement(video, (result) => {
-            if (result && !detectedRef.current) {
-              const code = result.getText().trim();
-              if (!isValidGtin(code)) return;
-              detectedRef.current = true;
-              try { navigator.vibrate?.(60); } catch { /* ignore */ }
-              setFlash(true);
-              onDetected(code);
-            }
+          if (result && !detectedRef.current) {
+            const code = result.getText().trim();
+            if (!isValidGtin(code)) return;
+            detectedRef.current = true;
+            try { navigator.vibrate?.(60); } catch { /* ignore */ }
+            setFlash(true);
+            onDetected(code);
+          }
         });
         const track = stream.getVideoTracks()[0] ?? null;
         trackRef.current = track;
@@ -88,6 +92,7 @@ export function BarcodeScanner({
     })();
 
     return () => {
+      cancelled = true;
       controls?.stop();
       activeStream?.getTracks().forEach((t) => t.stop());
       trackRef.current = null;
