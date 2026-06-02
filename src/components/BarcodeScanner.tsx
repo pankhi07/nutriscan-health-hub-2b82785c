@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { Flashlight, X } from "lucide-react";
 
 const GTIN_LENGTHS = new Set([8, 12, 13, 14]);
