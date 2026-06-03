@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Anyone can view food scan images" ON storage.objects;
