@@ -151,18 +151,57 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
     }
 
     let res: Response;
-    try {
-      res = await fetch(
-        `https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
-        { headers: { "User-Agent": "NutriScan/1.0 (https://nutriscan.app)" } },
-      );
-    } catch {
-      throw new Error("Network error reaching the food database. Check your connection and try again.");
+    const hosts = [
+      "https://world.openfoodfacts.org",
+      "https://in.openfoodfacts.org",
+ວ      "https://world.openfoodfacts.net",
+    ].filter((h) => !h.includes("ວ"));
+    let lastStatus = 0;
+    let lastErr: unknown = null;
+    res = null as unknown as Response;
+    outer: for (const host of hosts) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const r = await fetch(
+            `${host}/api/v2/product/${barcode}.json?fields=product_name,brands,ingredients_text,ingredients_text_en,categories`,
+            { headers: { "User-Agent": "NutriScan/1.0 (https://nutriscan.app)" }, signal: AbortSignal.timeout(8000) },
+          );
+          if (r.ok || r.status === 404) {
+            res = r;
+            break outer;
+          }
+          lastStatus = r.status;
+          // Retry on 5xx / 429
+          if (r.status < 500 && r.status !== 429) {
+            res = r;
+            break outer;
+          }
+        } catch (e) {
+          lastErr = e;
+        }
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+      }
+    }
+    if (!res) {
+      console.error("OpenFoodFacts unreachable", { lastStatus, lastErr });
+      return {
+        invalid: false as const,
+        notFound: true as const,
+        barcode,
+        reason: "upstream-unavailable" as const,
+      };
     }
     if (res.status === 404) {
       return { invalid: false as const, notFound: true as const, barcode };
     }
-    if (!res.ok) throw new Error(`Food database returned ${res.status}. Try again in a moment.`);
+    if (!res.ok) {
+      return {
+        invalid: false as const,
+        notFound: true as const,
+        barcode,
+        reason: "upstream-unavailable" as const,
+      };
+    }
     const json = (await res.json()) as {
       status?: number;
       product?: {
