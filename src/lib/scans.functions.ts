@@ -30,7 +30,14 @@ const AnalysisSchema = z.object({
 export type ScanAnalysis = z.infer<typeof AnalysisSchema>;
 
 const InputSchema = z.object({
-  imageDataUrl: z.string().min(20),
+  imageDataUrl: z
+    .string()
+    .min(20)
+    .max(7_000_000, "Image too large (max ~5MB). Please use a smaller photo.")
+    .refine(
+      (v) => /^data:image\/(jpeg|jpg|png|webp|gif);base64,/.test(v),
+      "Must be a base64-encoded image data URL (jpeg, png, webp, or gif)",
+    ),
   concerns: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
 });
 
