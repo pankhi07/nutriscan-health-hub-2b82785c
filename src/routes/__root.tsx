@@ -76,11 +76,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "NutriScan — Scan packaged food, get a health score" },
       { name: "description", content: "Snap a packaged food label and instantly get a 0-100 health score, harmful flags, and healthier alternatives." },
       { name: "author", content: "NutriScan" },
-      { property: "og:title", content: "NutriScan — Know what's in your food" },
-      { property: "og:description", content: "Snap a label. Get a health score, harmful flags, and healthier swaps." },
+      { property: "og:title", content: "NutriScan — Scan packaged food, get a health score" },
+      { property: "og:description", content: "Snap a packaged food label and instantly get a 0-100 health score, harmful flags, and healthier alternatives." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "NutriScan — Scan packaged food, get a health score" },
+      { name: "twitter:description", content: "Snap a packaged food label and instantly get a 0-100 health score, harmful flags, and healthier alternatives." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/e3aa8025-51eb-4d8e-81bf-1ca55538d038/id-preview-6f9f70c0--6873fec5-7a5d-4155-a677-49f1b711baa4.lovable.app-1780561646085.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/e3aa8025-51eb-4d8e-81bf-1ca55538d038/id-preview-6f9f70c0--6873fec5-7a5d-4155-a677-49f1b711baa4.lovable.app-1780561646085.png" },
     ],
     links: [
       {
