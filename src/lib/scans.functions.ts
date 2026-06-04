@@ -150,15 +150,14 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
       return { invalid: true as const, notFound: false as const, barcode };
     }
 
-    let res: Response;
     const hosts = [
       "https://world.openfoodfacts.org",
       "https://in.openfoodfacts.org",
-ວ      "https://world.openfoodfacts.net",
-    ].filter((h) => !h.includes("ວ"));
+      "https://world.openfoodfacts.net",
+    ];
+    let res: Response | null = null;
     let lastStatus = 0;
     let lastErr: unknown = null;
-    res = null as unknown as Response;
     outer: for (const host of hosts) {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
