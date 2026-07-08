@@ -14,63 +14,131 @@ export type Database = {
   }
   public: {
     Tables: {
-      profiles: {
+      favorites: {
         Row: {
           created_at: string
-          email: string | null
-          full_name: string | null
-          health_concerns: string[]
           id: string
+          scan_id: string
+          user_id: string
         }
         Insert: {
           created_at?: string
-          email?: string | null
-          full_name?: string | null
-          health_concerns?: string[]
-          id: string
+          id?: string
+          scan_id: string
+          user_id: string
         }
         Update: {
           created_at?: string
+          id?: string
+          scan_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "favorites_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "scans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          age: number | null
+          allergies: string[]
+          avatar_url: string | null
+          created_at: string
+          dietary_preference:
+            | Database["public"]["Enums"]["dietary_preference"]
+            | null
+          email: string | null
+          full_name: string | null
+          gender: string | null
+          health_concerns: string[]
+          height_cm: number | null
+          id: string
+          updated_at: string
+          weight_kg: number | null
+        }
+        Insert: {
+          age?: number | null
+          allergies?: string[]
+          avatar_url?: string | null
+          created_at?: string
+          dietary_preference?:
+            | Database["public"]["Enums"]["dietary_preference"]
+            | null
           email?: string | null
           full_name?: string | null
+          gender?: string | null
           health_concerns?: string[]
+          height_cm?: number | null
+          id: string
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Update: {
+          age?: number | null
+          allergies?: string[]
+          avatar_url?: string | null
+          created_at?: string
+          dietary_preference?:
+            | Database["public"]["Enums"]["dietary_preference"]
+            | null
+          email?: string | null
+          full_name?: string | null
+          gender?: string | null
+          health_concerns?: string[]
+          height_cm?: number | null
           id?: string
+          updated_at?: string
+          weight_kg?: number | null
         }
         Relationships: []
       }
       scans: {
         Row: {
           alternatives: Json
+          barcode: string | null
+          brand: string | null
           created_at: string
           harmful_ingredients: Json
           health_score: number
           id: string
           image_url: string | null
           ingredients: Json
+          nutrition: Json
           product_name: string | null
           summary: string | null
           user_id: string
         }
         Insert: {
           alternatives?: Json
+          barcode?: string | null
+          brand?: string | null
           created_at?: string
           harmful_ingredients?: Json
           health_score?: number
           id?: string
           image_url?: string | null
           ingredients?: Json
+          nutrition?: Json
           product_name?: string | null
           summary?: string | null
           user_id: string
         }
         Update: {
           alternatives?: Json
+          barcode?: string | null
+          brand?: string | null
           created_at?: string
           harmful_ingredients?: Json
           health_score?: number
           id?: string
           image_url?: string | null
           ingredients?: Json
+          nutrition?: Json
           product_name?: string | null
           summary?: string | null
           user_id?: string
@@ -85,7 +153,12 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      dietary_preference:
+        | "vegetarian"
+        | "vegan"
+        | "jain"
+        | "eggetarian"
+        | "non_vegetarian"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -212,6 +285,14 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      dietary_preference: [
+        "vegetarian",
+        "vegan",
+        "jain",
+        "eggetarian",
+        "non_vegetarian",
+      ],
+    },
   },
 } as const
