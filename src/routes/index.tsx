@@ -473,7 +473,7 @@ function ResultStep({
           )}
           <div className="min-w-0 flex-1">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Detected product</p>
-            <h2 className="truncate text-2xl font-bold">{result.product_name || "Unknown product"}</h2>
+            <h2 className="break-words text-2xl font-bold leading-tight">{result.product_name || "Unknown product"}</h2>
           </div>
           <HealthScore score={result.health_score} size={110} />
         </div>
