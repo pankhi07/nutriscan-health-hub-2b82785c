@@ -1,32 +1,69 @@
-## What's actually happening (in plain language)
+# Production Upgrade Plan
 
-Your camera **did** scan the barcode correctly — the session shows it picked up `8906010500566` (an Indian product) in a couple of seconds. The error you saw, **"Product lookup failed"**, is a different step: after reading the barcode number, the app asks the free OpenFoodFacts database "what product is this?" — and that database simply doesn't have this item on file. Most Indian/regional packaged foods aren't in it yet.
+Existing design, scan flow, and analysis stay intact. All additions layer on top of the current app.
 
-So the fix isn't the scanner — it's making the app behave nicely when the database doesn't recognize a barcode, instead of just throwing a scary red error.
+## 1. Database (Supabase migration)
 
-## Plan
+Extend existing tables and add favorites. Current `profiles` has `health_concerns`; current `scans` covers most history needs.
 
-1. **Better error messages in `analyzeBarcode`** (`src/lib/scans.functions.ts`)
-   - Distinguish three failure modes: network error, product-not-found (status ≠ 1 / 404), and no-ingredients-on-file.
-   - Return a structured `{ notFound: true, barcode }` result instead of throwing for the "not in database" case, so the UI can react instead of showing a generic toast.
+- **profiles** — add: `full_name` (exists), `avatar_url`, `age`, `gender`, `height_cm`, `weight_kg`, `dietary_preference` (enum), `allergies` (text[]). Keep `health_concerns`.
+- **scans** — add: `brand`, `barcode`, `nutrition` (jsonb). Existing columns cover the rest.
+- **favorites** — new: `user_id`, `scan_id` (FK, cascade), unique(user_id, scan_id).
+- **avatars** storage bucket (public, user-scoped write policies).
+- RLS on all tables, `auth.uid()`-scoped policies, GRANTs to authenticated + service_role.
 
-2. **Graceful UI fallback** (`src/routes/index.tsx`)
-   - When `notFound` comes back, show a friendly inline card: "We scanned barcode 8906010500566, but it isn't in our food database yet. Snap a photo of the ingredients list instead — we'll analyze it the same way." with a primary button that jumps straight to the photo-upload flow (and pre-opens the file picker).
-   - Keep the toast only for real errors (network, AI failure).
+## 2. Authentication
 
-3. **Scanner UX polish** (`src/components/BarcodeScanner.tsx`)
-   - Restrict formats to actual product barcodes (EAN-13, EAN-8, UPC-A, UPC-E, CODE-128) by passing `DecodeHintType.POSSIBLE_FORMATS` to `BrowserMultiFormatReader`. Right now it also tries QR/Aztec/Data Matrix on every frame, which is what's spamming those `MultiFormatReader` warnings in the console and slowing detection on weaker phones.
-   - Prefer the rear camera explicitly (`facingMode: "environment"`) and request a higher resolution constraint so distant/small barcodes decode faster.
-   - Add a small "torch" toggle when the device supports it (uses `MediaStreamTrack.applyConstraints({ advanced: [{ torch: true }] })`) — helps a lot in low light.
-   - Show a brief success flash + haptic vibration (`navigator.vibrate(50)`) the moment a code is detected, so the user knows the scan worked even before the analysis returns.
+Supabase email/password + Google (default per Cloud rules). Pages:
+- `/auth` — combined sign-in / sign-up with email verification notice.
+- `/auth/forgot-password` and `/reset-password`.
+- Persistent session via existing client; root `onAuthStateChange` invalidates router.
+- Protected routes moved under `src/routes/_authenticated/`. Public: `/`, `/auth`, `/reset-password`.
 
-## Files touched
+## 3. Routes
 
-- `src/lib/scans.functions.ts` — change `analyzeBarcode` return shape for not-found, sharpen error strings.
-- `src/components/BarcodeScanner.tsx` — format hints, rear-camera + resolution constraints, optional torch button, success feedback.
-- `src/routes/index.tsx` — handle `notFound` response with an inline "use photo instead" card, narrow toast usage to real errors.
+```
+/                         landing → redirects signed-in users to /dashboard
+/auth                     sign in / sign up
+/auth/forgot-password
+/reset-password
+/_authenticated/dashboard welcome, quick scan, recent scans, favorites, daily tip
+/_authenticated/scan      existing scan UI (moved from index)
+/_authenticated/history   list, search, sort, delete
+/_authenticated/favorites bookmarked scans
+/_authenticated/profile   edit all profile fields
+/_authenticated/scan/$id  detailed result page (product img, score, nutrition, harmful highlights, AI explanation, favorite toggle)
+```
 
-## Out of scope
+## 4. Components
 
-- Adding a second product database (e.g., a paid API). We can revisit if "not in database" happens often.
-- Storing previously-scanned barcodes (would need auth, which we removed).
+- `AuthForm`, `GoogleButton`, `ProtectedLayout` header w/ avatar menu (sign out).
+- `ScanCard`, `FavoriteToggle`, `HealthBadge` (reuses `HealthScore`), `NutritionTable`, `IngredientList` (harmful highlighted with reason tooltip).
+- `ProfileForm` (name, avatar upload, age, gender, height, weight, diet, allergies, health conditions).
+- `SearchBar`, `EmptyState`, `ConfirmDialog`.
+
+## 5. Server functions (createServerFn)
+
+- `saveScan` — insert into `scans` after analysis (auth required, RLS-scoped).
+- `listScans` / `getScan` / `deleteScan` / `searchScans`.
+- `toggleFavorite` / `listFavorites`.
+- `getProfile` / `updateProfile` / `uploadAvatar` (signed upload to bucket).
+- Existing `analyzeFoodImage` and `analyzeBarcode` unchanged; add optional `saveScan` chained call from client after success (so anonymous scan still works on `/` if we keep a demo).
+
+## 6. Integration with existing scan
+
+Existing scan UI moves to `/scan` (auth-required). Current concerns come from profile `health_concerns` automatically. After analysis returns, client calls `saveScan` and shows a "Save to favorites" toggle. All existing analysis code paths untouched.
+
+## 7. Manual setup required
+
+- Enable Google OAuth in Lovable Cloud (tool call will handle).
+- No secrets needed beyond existing `LOVABLE_API_KEY`.
+
+## Technical notes
+
+- Managed `_authenticated/route.tsx` handles the gate (ssr:false, redirect `/auth`).
+- Root `onAuthStateChange` filters SIGNED_IN/OUT/USER_UPDATED only.
+- Avatar bucket public; scans image bucket stays private (fixed prior finding).
+- All new tables get GRANTs in same migration.
+
+Approve to proceed — I'll ship the migration first, then code.
