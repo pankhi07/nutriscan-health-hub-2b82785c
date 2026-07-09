@@ -39,6 +39,7 @@ function ScanPage() {
   const [result, setResult] = useState<ScanAnalysis | null>(null);
   const [savedScanId, setSavedScanId] = useState<string | null>(null);
   const [concerns, setConcerns] = useState<string[]>([]);
+  const [sessionConcerns, setSessionConcerns] = useState<string[]>([]);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [barcodeIssue, setBarcodeIssue] = useState<{ code: string; kind: "invalid" | "missing" } | null>(null);
 
@@ -51,6 +52,27 @@ function ScanPage() {
       setConcerns(c);
     }).catch(() => {});
   }, [loadProfile]);
+
+  const QUICK_CONCERNS = [
+    "Diabetic",
+    "High blood pressure",
+    "High cholesterol",
+    "Heart condition",
+    "Weight loss",
+    "Pregnancy",
+    "Vegan",
+    "Vegetarian",
+    "Gluten-free",
+    "Lactose intolerant",
+    "Nut allergy",
+    "Kids / child",
+  ];
+
+  function toggleConcern(c: string) {
+    setSessionConcerns((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+  }
+
+  const activeConcerns = Array.from(new Set([...concerns, ...sessionConcerns]));
 
   async function persist(analysis: ScanAnalysis, opts: { image?: string | null; barcode?: string | null }) {
     try {
@@ -84,7 +106,7 @@ function ScanPage() {
     try {
       const dataUrl = await fileToDataUrl(file);
       setPreview(dataUrl);
-      const { analysis } = await analyze({ data: { imageDataUrl: dataUrl, concerns } });
+      const { analysis } = await analyze({ data: { imageDataUrl: dataUrl, concerns: activeConcerns } });
       setResult(analysis);
       persist(analysis, { image: dataUrl, barcode: null });
     } catch (e) {
@@ -103,7 +125,7 @@ function ScanPage() {
     setBarcodeIssue(null);
     toast.success(`Barcode ${code} detected`);
     try {
-      const res = await analyzeCode({ data: { barcode: code, concerns } });
+      const res = await analyzeCode({ data: { barcode: code, concerns: activeConcerns } });
       if (res.invalid) {
         setBarcodeIssue({ code, kind: "invalid" });
       } else if (res.notFound) {
