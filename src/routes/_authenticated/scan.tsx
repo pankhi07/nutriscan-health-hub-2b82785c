@@ -39,6 +39,7 @@ function ScanPage() {
   const [result, setResult] = useState<ScanAnalysis | null>(null);
   const [savedScanId, setSavedScanId] = useState<string | null>(null);
   const [concerns, setConcerns] = useState<string[]>([]);
+  const [sessionConcerns, setSessionConcerns] = useState<string[]>([]);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [barcodeIssue, setBarcodeIssue] = useState<{ code: string; kind: "invalid" | "missing" } | null>(null);
 
@@ -51,6 +52,27 @@ function ScanPage() {
       setConcerns(c);
     }).catch(() => {});
   }, [loadProfile]);
+
+  const QUICK_CONCERNS = [
+    "Diabetic",
+    "High blood pressure",
+    "High cholesterol",
+    "Heart condition",
+    "Weight loss",
+    "Pregnancy",
+    "Vegan",
+    "Vegetarian",
+    "Gluten-free",
+    "Lactose intolerant",
+    "Nut allergy",
+    "Kids / child",
+  ];
+
+  function toggleConcern(c: string) {
+    setSessionConcerns((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+  }
+
+  const activeConcerns = Array.from(new Set([...concerns, ...sessionConcerns]));
 
   async function persist(analysis: ScanAnalysis, opts: { image?: string | null; barcode?: string | null }) {
     try {
@@ -84,7 +106,7 @@ function ScanPage() {
     try {
       const dataUrl = await fileToDataUrl(file);
       setPreview(dataUrl);
-      const { analysis } = await analyze({ data: { imageDataUrl: dataUrl, concerns } });
+      const { analysis } = await analyze({ data: { imageDataUrl: dataUrl, concerns: activeConcerns } });
       setResult(analysis);
       persist(analysis, { image: dataUrl, barcode: null });
     } catch (e) {
@@ -103,7 +125,7 @@ function ScanPage() {
     setBarcodeIssue(null);
     toast.success(`Barcode ${code} detected`);
     try {
-      const res = await analyzeCode({ data: { barcode: code, concerns } });
+      const res = await analyzeCode({ data: { barcode: code, concerns: activeConcerns } });
       if (res.invalid) {
         setBarcodeIssue({ code, kind: "invalid" });
       } else if (res.notFound) {
@@ -139,10 +161,52 @@ function ScanPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Scan a food label</h1>
               <p className="text-sm text-muted-foreground">
-                {concerns.length > 0
-                  ? `Personalizing for: ${concerns.slice(0, 3).join(", ")}${concerns.length > 3 ? ` +${concerns.length - 3}` : ""}`
-                  : "Add health conditions in your Profile to personalize results."}
+                {activeConcerns.length > 0
+                  ? `Personalizing for: ${activeConcerns.slice(0, 3).join(", ")}${activeConcerns.length > 3 ? ` +${activeConcerns.length - 3}` : ""}`
+                  : "Pick your concerns below or add them in your Profile."}
               </p>
+            </div>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-border/60 bg-secondary/30 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Any concerns for this scan?</p>
+              {sessionConcerns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSessionConcerns([])}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Tap any that apply — we'll tailor the analysis and alternatives.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_CONCERNS.map((c) => {
+                const active = sessionConcerns.includes(c) || concerns.includes(c);
+                const fromProfile = concerns.includes(c) && !sessionConcerns.includes(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleConcern(c)}
+                    disabled={loading}
+                    className={
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-all " +
+                      (active
+                        ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-soft)]"
+                        : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-primary/5")
+                    }
+                    title={fromProfile ? "From your profile" : undefined}
+                  >
+                    {c}
+                    {fromProfile && <span className="ml-1 opacity-70">•</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -217,7 +281,7 @@ function ScanPage() {
               health_score: result.health_score,
               summary: result.summary,
             }}
-            concerns={concerns}
+            concerns={activeConcerns}
             actions={
               <>
                 <Button size="sm" variant="outline" onClick={reset}>
