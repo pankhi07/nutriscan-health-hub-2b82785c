@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { LogOut, Menu, X } from "lucide-react";
 import { Logo } from "./Logo";
 import { Button } from "./ui/button";
+import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -51,11 +52,15 @@ export function ProtectedHeader() {
         </nav>
         <div className="hidden items-center gap-2 md:flex">
           {email && <span className="max-w-[160px] truncate text-xs text-muted-foreground">{email}</span>}
+          <ThemeToggle />
           <Button size="sm" variant="outline" onClick={signOut}><LogOut className="mr-2 h-4 w-4" />Sign out</Button>
         </div>
-        <button className="md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
-          {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+        <div className="flex items-center gap-1 md:hidden">
+          <ThemeToggle />
+          <button onClick={() => setOpen(!open)} aria-label="Menu" className="p-2">
+            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
+        </div>
       </div>
       {open && (
         <div className="border-t border-border/60 bg-background/95 px-4 py-3 md:hidden">
