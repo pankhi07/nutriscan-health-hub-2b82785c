@@ -281,7 +281,7 @@ function ScanPage() {
               health_score: result.health_score,
               summary: result.summary,
             }}
-            concerns={concerns}
+            concerns={activeConcerns}
             actions={
               <>
                 <Button size="sm" variant="outline" onClick={reset}>
