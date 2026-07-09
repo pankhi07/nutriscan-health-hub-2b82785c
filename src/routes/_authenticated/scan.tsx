@@ -161,10 +161,52 @@ function ScanPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Scan a food label</h1>
               <p className="text-sm text-muted-foreground">
-                {concerns.length > 0
-                  ? `Personalizing for: ${concerns.slice(0, 3).join(", ")}${concerns.length > 3 ? ` +${concerns.length - 3}` : ""}`
-                  : "Add health conditions in your Profile to personalize results."}
+                {activeConcerns.length > 0
+                  ? `Personalizing for: ${activeConcerns.slice(0, 3).join(", ")}${activeConcerns.length > 3 ? ` +${activeConcerns.length - 3}` : ""}`
+                  : "Pick your concerns below or add them in your Profile."}
               </p>
+            </div>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-border/60 bg-secondary/30 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Any concerns for this scan?</p>
+              {sessionConcerns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSessionConcerns([])}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Tap any that apply — we'll tailor the analysis and alternatives.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_CONCERNS.map((c) => {
+                const active = sessionConcerns.includes(c) || concerns.includes(c);
+                const fromProfile = concerns.includes(c) && !sessionConcerns.includes(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleConcern(c)}
+                    disabled={loading}
+                    className={
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-all " +
+                      (active
+                        ? "border-primary bg-primary text-primary-foreground shadow-[var(--shadow-soft)]"
+                        : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-primary/5")
+                    }
+                    title={fromProfile ? "From your profile" : undefined}
+                  >
+                    {c}
+                    {fromProfile && <span className="ml-1 opacity-70">•</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
