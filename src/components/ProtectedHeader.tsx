@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LogOut, Menu, X } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Logo } from "./Logo";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "./ThemeToggle";
@@ -19,7 +19,6 @@ export function ProtectedHeader() {
   const navigate = useNavigate();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,30 +56,11 @@ export function ProtectedHeader() {
         </div>
         <div className="flex items-center gap-1 md:hidden">
           <ThemeToggle />
-          <button onClick={() => setOpen(!open)} aria-label="Menu" className="p-2">
-            {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          <Button size="sm" variant="ghost" onClick={signOut} aria-label="Sign out">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
-      {open && (
-        <div className="border-t border-border/60 bg-background/95 px-4 py-3 md:hidden">
-          <nav className="flex flex-col gap-1">
-            {links.map((l) => (
-              <Link
-                key={l.to}
-                to={l.to}
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
-              >
-                {l.label}
-              </Link>
-            ))}
-            <button onClick={signOut} className="mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10">
-              <LogOut className="h-4 w-4" /> Sign out
-            </button>
-          </nav>
-        </div>
-      )}
     </header>
   );
 }

@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { ProtectedHeader } from "@/components/ProtectedHeader";
+import { BottomNav } from "@/components/BottomNav";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -20,7 +21,10 @@ function AuthedLayout() {
       <div className="pointer-events-none absolute right-0 top-64 h-80 w-80 animate-blob rounded-full bg-[color-mix(in_oklab,var(--success)_60%,transparent)] blur-3xl" style={{ animationDelay: "3s" }} />
       <div className="relative">
         <ProtectedHeader />
-        <Outlet />
+        <div className="pb-24 md:pb-0">
+          <Outlet />
+        </div>
+        <BottomNav />
       </div>
     </div>
   );

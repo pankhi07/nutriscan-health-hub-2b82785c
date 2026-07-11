@@ -121,7 +121,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
         <HeadContent />
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('nutriscan-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}}catch(e){}`,
+            __html: `try{var t=localStorage.getItem('nutriscan-theme');if(t==='dark'){document.documentElement.classList.add('dark');}}catch(e){}`,
           }}
         />
       </head>
