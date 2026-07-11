@@ -49,9 +49,12 @@ export function BarcodeScanner({
         BarcodeFormat.EAN_8,
         BarcodeFormat.UPC_A,
         BarcodeFormat.UPC_E,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.ITF,
       ]);
-      hints.set(DecodeHintType.TRY_HARDER, true);
-      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120 });
+      // NOTE: TRY_HARDER causes zxing to attempt rotated decodes, which spams
+      // "Could not create a Canvas element" errors and hurts perf on mobile.
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 150 });
 
       try {
         let stream: MediaStream;
