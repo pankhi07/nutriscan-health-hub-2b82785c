@@ -7,8 +7,12 @@ export function HealthScore({ score, size = 120 }: { score: number; size?: numbe
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (clamped / 100) * circumference;
 
+  const scoreFontSize = Math.round(size * 0.22);
+  const unitFontSize = Math.max(8, Math.round(size * 0.09));
+  const labelVisible = size >= 72;
+
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-1.5">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle
@@ -33,16 +37,28 @@ export function HealthScore({ score, size = 120 }: { score: number; size?: numbe
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold text-foreground">{clamped}</span>
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">/ 100</span>
+          <span
+            className="font-bold text-foreground leading-none"
+            style={{ fontSize: scoreFontSize }}
+          >
+            {clamped}
+          </span>
+          <span
+            className="uppercase tracking-wider text-muted-foreground"
+            style={{ fontSize: unitFontSize }}
+          >
+            / 100
+          </span>
         </div>
       </div>
-      <span
-        className="rounded-full px-3 py-1 text-xs font-semibold"
-        style={{ backgroundColor: `color-mix(in oklab, ${color} 15%, transparent)`, color }}
-      >
-        {label}
-      </span>
+      {labelVisible && (
+        <span
+          className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
+          style={{ backgroundColor: `color-mix(in oklab, ${color} 15%, transparent)`, color }}
+        >
+          {label}
+        </span>
+      )}
     </div>
   );
 }

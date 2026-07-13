@@ -75,41 +75,57 @@ function HistoryPage() {
         </div>
         <div className="relative w-full max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search product…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+          <Input
+            placeholder="Search product…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="rounded-full border-border/60 bg-card pl-9 shadow-[var(--shadow-card)] transition-shadow focus-visible:ring-primary/30"
+          />
         </div>
       </div>
 
       {scansQ.isLoading ? (
         <div className="grid gap-3">{[0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-secondary/60" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-10 text-center">
-          <ScanLine className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{q ? "No matches." : "No scans yet."}</p>
+        <div className="rounded-3xl border border-dashed border-border/70 bg-card/40 p-10 text-center">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
+            <ScanLine className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium text-foreground">{q ? "No matches found" : "No scans yet"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{q ? "Try a different search term." : "Scan a product to see it here."}</p>
         </div>
       ) : (
         <div className="grid gap-3">
-          {filtered.map((s) => {
+          {filtered.map((s, i) => {
             const isFav = (favIdsQ.data ?? []).includes(s.id);
             return (
-              <div key={s.id} className="hover-lift flex items-center gap-4 rounded-2xl border border-border/60 glass p-4 shadow-[var(--shadow-card)]">
-                <button onClick={() => setOpenId(s.id)} className="flex flex-1 items-center gap-4 text-left">
+              <div
+                key={s.id}
+                className="hover-lift animate-fade-in group flex min-w-0 items-center gap-2 rounded-2xl border border-border/60 bg-card/70 p-3 shadow-[var(--shadow-card)] backdrop-blur-sm sm:gap-3 sm:p-4"
+                style={{ animationDelay: `${Math.min(i * 60, 300)}ms` }}
+              >
+                <button onClick={() => setOpenId(s.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left sm:gap-4">
                   {s.image_url ? (
-                    <img src={s.image_url} alt="" className="h-14 w-14 shrink-0 rounded-xl border border-border object-cover" />
+                    <img src={s.image_url} alt="" className="h-11 w-11 shrink-0 rounded-xl border border-border object-cover sm:h-14 sm:w-14" />
                   ) : (
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground"><ScanLine className="h-5 w-5" /></div>
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground sm:h-14 sm:w-14">
+                      <ScanLine className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{s.product_name || "Unknown product"}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{s.product_name || "Unknown product"}</p>
                     {s.brand && <p className="truncate text-xs text-muted-foreground">{s.brand}</p>}
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{new Date(s.created_at).toLocaleString()}</p>
                   </div>
-                  <HealthScore score={s.health_score} size={56} />
+                  <div className="shrink-0">
+                    <HealthScore score={s.health_score} size={48} />
+                  </div>
                 </button>
-                <div className="flex flex-col gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => fav(s.id)} aria-label="Favorite">
-                    <Heart className={`h-4 w-4 ${isFav ? "fill-primary text-primary" : ""}`} />
+                <div className="flex shrink-0 flex-col gap-1">
+                  <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 rounded-full" onClick={() => fav(s.id)} aria-label="Favorite">
+                    <Heart className={`h-4 w-4 ${isFav ? "fill-primary text-primary" : "text-muted-foreground"}`} />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => remove(s.id)} aria-label="Delete">
+                  <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 rounded-full" onClick={() => remove(s.id)} aria-label="Delete">
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
@@ -123,7 +139,7 @@ function HistoryPage() {
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-background/80 p-4 backdrop-blur-sm" onClick={() => setOpenId(null)}>
           <div className="mx-auto my-8 w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex justify-end">
-              <Button size="sm" variant="outline" onClick={() => setOpenId(null)}>Close</Button>
+              <Button size="sm" variant="outline" className="rounded-full" onClick={() => setOpenId(null)}>Close</Button>
             </div>
             {detailQ.isLoading || !detailQ.data ? (
               <div className="h-64 animate-pulse rounded-3xl bg-secondary/60" />
