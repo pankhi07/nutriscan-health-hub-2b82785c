@@ -47,12 +47,13 @@ function Landing() {
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Button asChild size="lg" className="shadow-[var(--shadow-soft)] transition-all hover:shadow-[var(--shadow-glow)]">
-                <Link to="/auth">Get started <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                <Link to="/try">Try a free scan <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <Link to="/auth">I have an account</Link>
+                <Link to="/auth">Sign in</Link>
               </Button>
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">No account needed for your first scan.</p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-primary" /> Private & secure</span>
               <span className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-primary" /> Instant results</span>
