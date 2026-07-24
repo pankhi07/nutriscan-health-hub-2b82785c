@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, Camera, Heart, ScanLine, ShieldCheck, Sparkles, Star, Zap } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { TrialScanner } from "@/components/TrialScanner";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -17,11 +18,21 @@ export const Route = createFileRoute("/")({
 
 function Landing() {
   const navigate = useNavigate();
+  const [checking, setChecking] = useState(true);
+  const [user, setUser] = useState(false);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate({ to: "/dashboard", replace: true });
+      if (data.user) {
+        navigate({ to: "/dashboard", replace: true });
+      } else {
+        setUser(false);
+        setChecking(false);
+      }
     });
   }, [navigate]);
+
+  const trialUsed = typeof window !== "undefined" && localStorage.getItem("nutriscan_trial_used") === "1";
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
@@ -59,6 +70,14 @@ function Landing() {
               <span className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-primary" /> Instant results</span>
               <span className="flex items-center gap-1.5"><Star className="h-3.5 w-3.5 text-primary" /> Personalized to you</span>
             </div>
+          </section>
+
+          <section className="mt-14 animate-slide-up">
+            {checking ? (
+              <div className="h-96 animate-pulse rounded-3xl border border-border/60 bg-secondary/40" />
+            ) : (
+              <TrialScanner initialUsed={trialUsed} />
+            )}
           </section>
 
           <section className="mt-20 grid gap-4 sm:grid-cols-3">
