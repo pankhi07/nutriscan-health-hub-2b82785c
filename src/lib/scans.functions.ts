@@ -1,7 +1,32 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText } from "ai";
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { GoogleGenAI } from "@google/genai";
+
+function getGenAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured. Set it in your environment (e.g. Vercel project settings).");
+  }
+  return new GoogleGenAI({ apiKey });
+}
+
+function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,(.+)$/);
+  if (!match) throw new Error("Invalid image data URL");
+  return { mimeType: match[1], data: match[2] };
+}
+
+function extractJson(raw: string): unknown {
+  const t = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  try {
+    return JSON.parse(t);
+  } catch {
+    const s = t.indexOf("{");
+    const e = t.lastIndexOf("}");
+    if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
+    throw new Error("Model did not return JSON");
+  }
+}
 
 const AnalysisSchema = z.object({
   product_name: z.string().describe("Best-guess product name from the package"),
