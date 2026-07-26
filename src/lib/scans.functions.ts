@@ -1,7 +1,32 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText } from "ai";
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { GoogleGenAI } from "@google/genai";
+
+function getGenAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured. Set it in your environment (e.g. Vercel project settings).");
+  }
+  return new GoogleGenAI({ apiKey });
+}
+
+function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,(.+)$/);
+  if (!match) throw new Error("Invalid image data URL");
+  return { mimeType: match[1], data: match[2] };
+}
+
+function extractJson(raw: string): unknown {
+  const t = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  try {
+    return JSON.parse(t);
+  } catch {
+    const s = t.indexOf("{");
+    const e = t.lastIndexOf("}");
+    if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
+    throw new Error("Model did not return JSON");
+  }
+}
 
 const AnalysisSchema = z.object({
   product_name: z.string().describe("Best-guess product name from the package"),
@@ -66,11 +91,13 @@ function isValidGtin(barcode: string) {
 export const analyzeFoodImage = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => InputSchema.parse(input))
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("AI is not configured");
-
-    const gateway = createLovableAiGatewayProvider(apiKey);
-    const model = gateway("google/gemini-2.5-flash");
+    const ai = getGenAI();
+    let image: { mimeType: string; data: string };
+    try {
+      image = parseDataUrl(data.imageDataUrl);
+    } catch {
+      throw new Error("Invalid image. Please upload a valid JPEG, PNG, WEBP, or GIF.");
+    }
 
     const concerns = data.concerns;
     const concernsText = concerns.length
@@ -87,49 +114,40 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
   "alternatives": { "name": string, "reason": string }[]
 }`;
 
-    const messages = [
-      {
-        role: "system" as const,
-        content:
-          "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary. " +
-          schemaHint +
-          concernsText,
-      },
-      {
-        role: "user" as const,
-        content: [
-          { type: "text" as const, text: "Analyze this packaged food label. Respond with the JSON object only." },
-          { type: "image" as const, image: data.imageDataUrl },
-        ],
-      },
-    ];
-
-    const extractJson = (raw: string): unknown => {
-      const trimmed = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      try {
-        return JSON.parse(trimmed);
-      } catch {
-        const start = trimmed.indexOf("{");
-        const end = trimmed.lastIndexOf("}");
-        if (start !== -1 && end > start) {
-          return JSON.parse(trimmed.slice(start, end + 1));
-        }
-        throw new Error("Model did not return JSON");
-      }
-    };
+    const systemInstruction =
+      "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary. " +
+      schemaHint +
+      concernsText;
 
     const tryGenerate = async (modelId: string) => {
-      const { text } = await generateText({ model: gateway(modelId), messages });
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: "Analyze this packaged food label. Respond with the JSON object only." },
+              { inlineData: { mimeType: image.mimeType, data: image.data } },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+        },
+      });
+      const text = response.text;
+      if (!text) throw new Error("Empty response from Gemini");
       const parsed = extractJson(text);
       return AnalysisSchema.parse(parsed);
     };
 
     try {
-      return { analysis: await tryGenerate("google/gemini-2.5-flash") };
+      return { analysis: await tryGenerate("gemini-2.5-flash") };
     } catch (err) {
       console.error("NutriScan first attempt failed", err);
       try {
-        return { analysis: await tryGenerate("google/gemini-2.5-pro") };
+        return { analysis: await tryGenerate("gemini-2.5-pro") };
       } catch (err2) {
         console.error("NutriScan second attempt failed", err2);
         throw new Error(
@@ -142,8 +160,7 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
 export const analyzeBarcode = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => BarcodeInputSchema.parse(input))
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("AI is not configured");
+    const ai = getGenAI();
 
     const barcode = data.barcode.trim();
     if (!isValidGtin(barcode)) {
@@ -221,8 +238,6 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
     }
     const productName = [p.brands, p.product_name].filter(Boolean).join(" — ") || "Unknown product";
 
-    const gateway = createLovableAiGatewayProvider(apiKey);
-
     const concernsText = data.concerns.length
       ? `\n\nThe user has these personal health concerns: ${data.concerns.join(", ")}. Treat ingredients risky for these concerns as harmful (raise severity), explain WHY each flagged ingredient matters for these conditions, and tailor the alternatives.`
       : "";
@@ -237,40 +252,38 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
   "alternatives": { "name": string, "reason": string }[]
 }`;
 
-    const messages = [
-      {
-        role: "system" as const,
-        content:
-          "You are NutriScan, an expert nutritionist. Analyze the ingredient list of a packaged food. Flag harmful preservatives, excess sugar, palm oil, artificial colors, trans fats, HFCS, nitrates, MSG variants, artificial sweeteners, BHA/BHT. Give an honest health_score 0-100, explain WHY it's unhealthy in summary, and suggest healthier real-world alternatives. " +
-          schemaHint +
-          concernsText,
-      },
-      {
-        role: "user" as const,
-        content: `Product: ${productName}\n${p.categories ? `Categories: ${p.categories}\n` : ""}Ingredients: ${ingredientsText}\n\nReturn the JSON object only.`,
-      },
-    ];
+    const systemInstruction =
+      "You are NutriScan, an expert nutritionist. Analyze the ingredient list of a packaged food. Flag harmful preservatives, excess sugar, palm oil, artificial colors, trans fats, HFCS, nitrates, MSG variants, artificial sweeteners, BHA/BHT. Give an honest health_score 0-100, explain WHY it's unhealthy in summary, and suggest healthier real-world alternatives. " +
+      schemaHint +
+      concernsText;
 
-    const extractJson = (raw: string): unknown => {
-      const t = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      try { return JSON.parse(t); } catch {
-        const s = t.indexOf("{"), e = t.lastIndexOf("}");
-        if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
-        throw new Error("Model did not return JSON");
-      }
-    };
+    const userPrompt = `Product: ${productName}\n${p.categories ? `Categories: ${p.categories}\n` : ""}Ingredients: ${ingredientsText}\n\nReturn the JSON object only.`;
 
     const run = async (modelId: string) => {
-      const { text } = await generateText({ model: gateway(modelId), messages });
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+        },
+      });
+      const text = response.text;
+      if (!text) throw new Error("Empty response from Gemini");
       const parsed = extractJson(text) as Record<string, unknown>;
       if (!parsed.product_name) parsed.product_name = productName;
       return AnalysisSchema.parse(parsed);
     };
 
     try {
-      return { invalid: false as const, notFound: false as const, analysis: await run("google/gemini-2.5-flash") };
+      return { invalid: false as const, notFound: false as const, analysis: await run("gemini-2.5-flash") };
     } catch (err) {
       console.error("Barcode analysis flash failed", err);
-      return { invalid: false as const, notFound: false as const, analysis: await run("google/gemini-2.5-pro") };
+      try {
+        return { invalid: false as const, notFound: false as const, analysis: await run("gemini-2.5-pro") };
+      } catch (err2) {
+        console.error("Barcode analysis pro failed", err2);
+        throw new Error("Couldn't analyze this product right now. Please try again in a moment.");
+      }
     }
   });
