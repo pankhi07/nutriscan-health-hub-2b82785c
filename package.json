@@ -12,9 +12,9 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^2.0.48",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/manrope": "^5.2.8",
+    "@google/genai": "^2.13.0",
     "@hookform/resolvers": "^5.2.2",
     "@lovable.dev/cloud-auth-js": "^1.1.2",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -51,7 +51,6 @@
     "@tanstack/router-plugin": "^1.167.28",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.23.0",
-    "ai": "^6.0.191",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
