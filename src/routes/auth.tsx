@@ -47,11 +47,19 @@ function AuthPage() {
         toast.success("Check your email to verify your account.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        if (error) {
+          console.error("Sign-in error", error);
+          if (/email.*not.*confirmed/i.test(error.message)) {
+            throw new Error("Please confirm your email, then try again. (Check your inbox.)");
+          }
+          throw error;
+        }
         navigate({ to: "/dashboard", replace: true });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Authentication failed");
+      const msg = err instanceof Error ? err.message : "Authentication failed";
+      console.error("Auth failure", err);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
