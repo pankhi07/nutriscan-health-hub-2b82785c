@@ -2,30 +2,114 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
 
+/**
+ * Model IDs.
+ * `gemini-2.5-flash` / `gemini-2.5-pro` are NOT available on newly-issued API keys
+ * (404 "no longer available to new users" / 429 zero-quota). The rolling aliases below
+ * always point at the current supported Flash generation.
+ */
+const PRIMARY_MODEL = "gemini-flash-latest";
+const FALLBACK_MODEL = "gemini-flash-lite-latest";
+
+/** Thrown for conditions where retrying is pointless (auth, model, safety). */
+class FatalScanError extends Error {}
+
 function getGenAI() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured. Set it in your environment (e.g. Vercel project settings).");
+    throw new FatalScanError(
+      "The AI service isn't configured (missing GEMINI_API_KEY). Please contact support.",
+    );
   }
+  console.log("[NutriScan] using GEMINI_API_KEY prefix:", apiKey.slice(0, 8));
   return new GoogleGenAI({ apiKey });
 }
 
 function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
   const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,(.+)$/);
   if (!match) throw new Error("Invalid image data URL");
-  return { mimeType: match[1], data: match[2] };
+  const mimeType = match[1] === "image/jpg" ? "image/jpeg" : match[1];
+  const data = match[2].trim();
+  if (data.length < 100) throw new Error("Image data is empty");
+  return { mimeType, data };
 }
 
 function extractJson(raw: string): unknown {
-  const t = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  let t = raw.trim();
+  // Strip markdown fences anywhere in the response.
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) t = fenced[1].trim();
   try {
     return JSON.parse(t);
   } catch {
+    // Fall back to the outermost {...} span, ignoring any prose around it.
     const s = t.indexOf("{");
     const e = t.lastIndexOf("}");
-    if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
+    if (s !== -1 && e > s) {
+      try {
+        return JSON.parse(t.slice(s, e + 1));
+      } catch { /* fall through */ }
+    }
     throw new Error("Model did not return JSON");
   }
+}
+
+/** Turn a raw SDK/network failure into a specific, user-readable message. */
+function classifyError(err: unknown): Error {
+  if (err instanceof FatalScanError) return err;
+  const msg = err instanceof Error ? err.message : String(err);
+  const status = Number((err as { status?: number })?.status ?? (msg.match(/\b(4\d\d|5\d\d)\b/)?.[1] ?? 0));
+
+  if (status === 401 || status === 403 || /API key not valid|PERMISSION_DENIED|UNAUTHENTICATED/i.test(msg)) {
+    return new FatalScanError("The AI service rejected our API key. Please contact support.");
+  }
+  if (status === 404 || /no longer available|not found/i.test(msg)) {
+    return new FatalScanError("The AI model is unavailable right now. Please try again later.");
+  }
+  if (status === 429 || /quota|rate limit|RESOURCE_EXHAUSTED/i.test(msg)) {
+    return new FatalScanError("The AI service is over its usage limit right now. Please try again in a few minutes.");
+  }
+  if (/safety|blocked|PROHIBITED_CONTENT/i.test(msg)) {
+    return new FatalScanError("The AI declined to analyze this image. Please try a different photo.");
+  }
+  if (/fetch failed|network|ENOTFOUND|ECONNRESET|timeout|aborted/i.test(msg)) {
+    return new Error("Network problem reaching the AI service. Please check your connection and try again.");
+  }
+  if (/did not return JSON|Unexpected token|Empty response/i.test(msg)) {
+    return new Error("The AI response was malformed. Please try that scan again.");
+  }
+  return new Error(msg || "Something went wrong analyzing this image.");
+}
+
+/** Log everything the API told us about the generation, then surface real blocks as errors. */
+function inspectResponse(model: string, response: {
+  text?: string;
+  candidates?: Array<{ finishReason?: string; safetyRatings?: unknown }>;
+  promptFeedback?: { blockReason?: string; safetyRatings?: unknown };
+  usageMetadata?: unknown;
+}) {
+  const candidate = response.candidates?.[0];
+  console.log("[NutriScan] gemini response", {
+    model,
+    finishReason: candidate?.finishReason,
+    safetyRatings: candidate?.safetyRatings,
+    promptFeedback: response.promptFeedback,
+    usage: response.usageMetadata,
+    textLength: response.text?.length ?? 0,
+  });
+  if (response.promptFeedback?.blockReason) {
+    throw new FatalScanError(
+      `The AI blocked this image (${response.promptFeedback.blockReason}). Please try a different photo.`,
+    );
+  }
+  if (candidate?.finishReason === "SAFETY") {
+    throw new FatalScanError("The AI blocked this image for safety reasons. Please try a different photo.");
+  }
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new Error("The AI response was cut short. Please try that scan again.");
+  }
+  if (!response.text) throw new Error("Empty response from Gemini");
+  return response.text;
 }
 
 const AnalysisSchema = z.object({
@@ -96,7 +180,7 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
     try {
       image = parseDataUrl(data.imageDataUrl);
     } catch {
-      throw new Error("Invalid image. Please upload a valid JPEG, PNG, WEBP, or GIF.");
+      throw new Error("Invalid or empty image. Please upload a valid JPEG, PNG, WEBP, or GIF photo.");
     }
 
     const concerns = data.concerns;
@@ -114,10 +198,33 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
   "alternatives": { "name": string, "reason": string }[]
 }`;
 
+    // OCR-first instruction: read the small print before reasoning about it, and
+    // always return partial results rather than giving up.
     const systemInstruction =
-      "You are NutriScan, an expert nutritionist analyzing packaged food labels. Read the ingredient list carefully. Flag ingredients widely considered harmful, ultra-processed, or to be limited (artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). Give an honest health_score 0-100. Suggest healthier real-world alternatives. If the image is not a food label, return an empty ingredients list, health_score 0, and explain in summary. " +
+      "You are NutriScan, an expert nutritionist analyzing packaged food labels.\n" +
+      "STEP 1 - OCR: Before anything else, transcribe the ingredients list from the image. " +
+      "Zoom mentally into the smallest printed text, including low-contrast, curved, glossy, rotated, or partially blurred packaging. " +
+      "Ignore branding, marketing claims, logos, and decoration - you only care about the ingredient statement and any additive/E-number codes. " +
+      "If the text is in another language, translate ingredient names to English.\n" +
+      "STEP 2 - ANALYSIS: Flag ingredients widely considered harmful, ultra-processed, or to be limited " +
+      "(artificial colors, trans fats, HFCS, nitrates, MSG variants, excess sodium, artificial sweeteners, BHA/BHT, palm oil, etc). " +
+      "Give an honest health_score 0-100 and suggest healthier real-world alternatives.\n" +
+      "NEVER refuse and never return an error. If only part of the list is legible, return the ingredients you COULD read " +
+      "and note in the summary that the label was partially readable. If you can identify the product but not the label, " +
+      "use the typical ingredients for that product and say so in the summary. " +
+      "Only if the image contains no food product at all, return an empty ingredients list with health_score 0 and explain in summary. " +
       schemaHint +
       concernsText;
+
+    console.log("[NutriScan] image request", {
+      mimeType: image.mimeType,
+      base64Length: image.data.length,
+      approxBytes: Math.round((image.data.length * 3) / 4),
+      primaryModel: PRIMARY_MODEL,
+      responseMimeType: "application/json",
+      hasSystemInstruction: systemInstruction.length > 0,
+      concerns,
+    });
 
     const tryGenerate = async (modelId: string) => {
       const response = await ai.models.generateContent({
@@ -126,7 +233,12 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
           {
             role: "user",
             parts: [
-              { text: "Analyze this packaged food label. Respond with the JSON object only." },
+              {
+                text:
+                  "Transcribe the ingredients list from this packaged food label, then analyze it. " +
+                  "Respond with the JSON object only.",
+              },
+              // Raw base64 only - the `data:` prefix is stripped by parseDataUrl.
               { inlineData: { mimeType: image.mimeType, data: image.data } },
             ],
           },
@@ -134,25 +246,28 @@ export const analyzeFoodImage = createServerFn({ method: "POST" })
         config: {
           systemInstruction,
           responseMimeType: "application/json",
+          temperature: 0.2,
+          maxOutputTokens: 4096,
         },
       });
-      const text = response.text;
-      if (!text) throw new Error("Empty response from Gemini");
+      const text = inspectResponse(modelId, response);
       const parsed = extractJson(text);
       return AnalysisSchema.parse(parsed);
     };
 
     try {
-      return { analysis: await tryGenerate("gemini-2.5-flash") };
+      return { analysis: await tryGenerate(PRIMARY_MODEL) };
     } catch (err) {
-      console.error("NutriScan first attempt failed", err);
+      const classified = classifyError(err);
+      console.error("[NutriScan] image analysis primary failed", { model: PRIMARY_MODEL, raw: err });
+      // Only retry transient failures (timeout / empty / malformed JSON / network).
+      // Auth, model-availability, quota and safety blocks are fatal - retrying just wastes time.
+      if (classified instanceof FatalScanError) throw classified;
       try {
-        return { analysis: await tryGenerate("gemini-2.5-pro") };
+        return { analysis: await tryGenerate(FALLBACK_MODEL) };
       } catch (err2) {
-        console.error("NutriScan second attempt failed", err2);
-        throw new Error(
-          "Couldn't read this image clearly. Try a sharper, well-lit photo of the ingredients list.",
-        );
+        console.error("[NutriScan] image analysis fallback failed", { model: FALLBACK_MODEL, raw: err2 });
+        throw classifyError(err2);
       }
     }
   });
@@ -268,22 +383,23 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
           responseMimeType: "application/json",
         },
       });
-      const text = response.text;
-      if (!text) throw new Error("Empty response from Gemini");
+      const text = inspectResponse(modelId, response);
       const parsed = extractJson(text) as Record<string, unknown>;
       if (!parsed.product_name) parsed.product_name = productName;
       return AnalysisSchema.parse(parsed);
     };
 
     try {
-      return { invalid: false as const, notFound: false as const, analysis: await run("gemini-2.5-flash") };
+      return { invalid: false as const, notFound: false as const, analysis: await run(PRIMARY_MODEL) };
     } catch (err) {
-      console.error("Barcode analysis flash failed", err);
+      const classified = classifyError(err);
+      console.error("[NutriScan] barcode analysis primary failed", { model: PRIMARY_MODEL, raw: err });
+      if (classified instanceof FatalScanError) throw classified;
       try {
-        return { invalid: false as const, notFound: false as const, analysis: await run("gemini-2.5-pro") };
+        return { invalid: false as const, notFound: false as const, analysis: await run(FALLBACK_MODEL) };
       } catch (err2) {
-        console.error("Barcode analysis pro failed", err2);
-        throw new Error("Couldn't analyze this product right now. Please try again in a moment.");
+        console.error("[NutriScan] barcode analysis fallback failed", { model: FALLBACK_MODEL, raw: err2 });
+        throw classifyError(err2);
       }
     }
   });
