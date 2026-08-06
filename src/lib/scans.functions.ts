@@ -2,30 +2,114 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
 
+/**
+ * Model IDs.
+ * `gemini-2.5-flash` / `gemini-2.5-pro` are NOT available on newly-issued API keys
+ * (404 "no longer available to new users" / 429 zero-quota). The rolling aliases below
+ * always point at the current supported Flash generation.
+ */
+const PRIMARY_MODEL = "gemini-flash-latest";
+const FALLBACK_MODEL = "gemini-flash-lite-latest";
+
+/** Thrown for conditions where retrying is pointless (auth, model, safety). */
+class FatalScanError extends Error {}
+
 function getGenAI() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured. Set it in your environment (e.g. Vercel project settings).");
+    throw new FatalScanError(
+      "The AI service isn't configured (missing GEMINI_API_KEY). Please contact support.",
+    );
   }
+  console.log("[NutriScan] using GEMINI_API_KEY prefix:", apiKey.slice(0, 8));
   return new GoogleGenAI({ apiKey });
 }
 
 function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
   const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,(.+)$/);
   if (!match) throw new Error("Invalid image data URL");
-  return { mimeType: match[1], data: match[2] };
+  const mimeType = match[1] === "image/jpg" ? "image/jpeg" : match[1];
+  const data = match[2].trim();
+  if (data.length < 100) throw new Error("Image data is empty");
+  return { mimeType, data };
 }
 
 function extractJson(raw: string): unknown {
-  const t = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  let t = raw.trim();
+  // Strip markdown fences anywhere in the response.
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) t = fenced[1].trim();
   try {
     return JSON.parse(t);
   } catch {
+    // Fall back to the outermost {...} span, ignoring any prose around it.
     const s = t.indexOf("{");
     const e = t.lastIndexOf("}");
-    if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
+    if (s !== -1 && e > s) {
+      try {
+        return JSON.parse(t.slice(s, e + 1));
+      } catch { /* fall through */ }
+    }
     throw new Error("Model did not return JSON");
   }
+}
+
+/** Turn a raw SDK/network failure into a specific, user-readable message. */
+function classifyError(err: unknown): Error {
+  if (err instanceof FatalScanError) return err;
+  const msg = err instanceof Error ? err.message : String(err);
+  const status = Number((err as { status?: number })?.status ?? (msg.match(/\b(4\d\d|5\d\d)\b/)?.[1] ?? 0));
+
+  if (status === 401 || status === 403 || /API key not valid|PERMISSION_DENIED|UNAUTHENTICATED/i.test(msg)) {
+    return new FatalScanError("The AI service rejected our API key. Please contact support.");
+  }
+  if (status === 404 || /no longer available|not found/i.test(msg)) {
+    return new FatalScanError("The AI model is unavailable right now. Please try again later.");
+  }
+  if (status === 429 || /quota|rate limit|RESOURCE_EXHAUSTED/i.test(msg)) {
+    return new FatalScanError("The AI service is over its usage limit right now. Please try again in a few minutes.");
+  }
+  if (/safety|blocked|PROHIBITED_CONTENT/i.test(msg)) {
+    return new FatalScanError("The AI declined to analyze this image. Please try a different photo.");
+  }
+  if (/fetch failed|network|ENOTFOUND|ECONNRESET|timeout|aborted/i.test(msg)) {
+    return new Error("Network problem reaching the AI service. Please check your connection and try again.");
+  }
+  if (/did not return JSON|Unexpected token|Empty response/i.test(msg)) {
+    return new Error("The AI response was malformed. Please try that scan again.");
+  }
+  return new Error(msg || "Something went wrong analyzing this image.");
+}
+
+/** Log everything the API told us about the generation, then surface real blocks as errors. */
+function inspectResponse(model: string, response: {
+  text?: string;
+  candidates?: Array<{ finishReason?: string; safetyRatings?: unknown }>;
+  promptFeedback?: { blockReason?: string; safetyRatings?: unknown };
+  usageMetadata?: unknown;
+}) {
+  const candidate = response.candidates?.[0];
+  console.log("[NutriScan] gemini response", {
+    model,
+    finishReason: candidate?.finishReason,
+    safetyRatings: candidate?.safetyRatings,
+    promptFeedback: response.promptFeedback,
+    usage: response.usageMetadata,
+    textLength: response.text?.length ?? 0,
+  });
+  if (response.promptFeedback?.blockReason) {
+    throw new FatalScanError(
+      `The AI blocked this image (${response.promptFeedback.blockReason}). Please try a different photo.`,
+    );
+  }
+  if (candidate?.finishReason === "SAFETY") {
+    throw new FatalScanError("The AI blocked this image for safety reasons. Please try a different photo.");
+  }
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new Error("The AI response was cut short. Please try that scan again.");
+  }
+  if (!response.text) throw new Error("Empty response from Gemini");
+  return response.text;
 }
 
 const AnalysisSchema = z.object({
