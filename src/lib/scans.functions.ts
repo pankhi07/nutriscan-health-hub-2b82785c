@@ -383,22 +383,23 @@ export const analyzeBarcode = createServerFn({ method: "POST" })
           responseMimeType: "application/json",
         },
       });
-      const text = response.text;
-      if (!text) throw new Error("Empty response from Gemini");
+      const text = inspectResponse(modelId, response);
       const parsed = extractJson(text) as Record<string, unknown>;
       if (!parsed.product_name) parsed.product_name = productName;
       return AnalysisSchema.parse(parsed);
     };
 
     try {
-      return { invalid: false as const, notFound: false as const, analysis: await run("gemini-2.5-flash") };
+      return { invalid: false as const, notFound: false as const, analysis: await run(PRIMARY_MODEL) };
     } catch (err) {
-      console.error("Barcode analysis flash failed", err);
+      const classified = classifyError(err);
+      console.error("[NutriScan] barcode analysis primary failed", { model: PRIMARY_MODEL, raw: err });
+      if (classified instanceof FatalScanError) throw classified;
       try {
-        return { invalid: false as const, notFound: false as const, analysis: await run("gemini-2.5-pro") };
+        return { invalid: false as const, notFound: false as const, analysis: await run(FALLBACK_MODEL) };
       } catch (err2) {
-        console.error("Barcode analysis pro failed", err2);
-        throw new Error("Couldn't analyze this product right now. Please try again in a moment.");
+        console.error("[NutriScan] barcode analysis fallback failed", { model: FALLBACK_MODEL, raw: err2 });
+        throw classifyError(err2);
       }
     }
   });

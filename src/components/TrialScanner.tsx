@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { prepareImageDataUrl } from "@/lib/image-prep";
 import { Barcode, Camera, ScanLine, Sparkles, Upload, ShieldAlert, Lock, ArrowRight } from "lucide-react";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { Button } from "@/components/ui/button";
@@ -24,15 +25,6 @@ const QUICK_CONCERNS = [
   "Keto / Low-carb",
   "Low sodium",
 ];
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
 
 export function TrialScanner({ initialUsed = false }: { initialUsed?: boolean }) {
   const analyze = useServerFn(analyzeFoodImage);
@@ -65,7 +57,7 @@ export function TrialScanner({ initialUsed = false }: { initialUsed?: boolean })
     setBarcode(null);
     setBarcodeIssue(null);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const dataUrl = await prepareImageDataUrl(file);
       setPreview(dataUrl);
       const { analysis } = await analyze({ data: { imageDataUrl: dataUrl, concerns } });
       setResult(analysis);

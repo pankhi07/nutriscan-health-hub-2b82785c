@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { prepareImageDataUrl } from "@/lib/image-prep";
 import { Barcode, Camera, RefreshCw, ScanLine, Sparkles, Upload, ShieldAlert } from "lucide-react";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { Button } from "@/components/ui/button";
@@ -14,15 +15,6 @@ export const Route = createFileRoute("/_authenticated/scan")({
   head: () => ({ meta: [{ title: "Scan — NutriScan" }] }),
   component: ScanPage,
 });
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
 
 function ScanPage() {
   const analyze = useServerFn(analyzeFoodImage);
@@ -120,7 +112,7 @@ function ScanPage() {
     setBarcode(null);
     setBarcodeIssue(null);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const dataUrl = await prepareImageDataUrl(file);
       setPreview(dataUrl);
       const { analysis } = await analyze({ data: { imageDataUrl: dataUrl, concerns: activeConcerns } });
       setResult(analysis);
