@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { Flashlight, X } from "lucide-react";
+import { Flashlight, X, Keyboard } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const GTIN_LENGTHS = new Set([8, 12, 13, 14]);
 
@@ -31,32 +33,32 @@ export function BarcodeScanner({
   const [flash, setFlash] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [manual, setManual] = useState("");
   const trackRef = useRef<MediaStreamTrack | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let controls: { stop: () => void } | null = null;
     let activeStream: MediaStream | null = null;
+    let rafId = 0;
+
+    const accept = (raw: string) => {
+      const code = raw.trim();
+      if (detectedRef.current || !isValidGtin(code)) return;
+      detectedRef.current = true;
+      try { navigator.vibrate?.(60); } catch { /* ignore */ }
+      setFlash(true);
+      onDetected(code);
+    };
 
     (async () => {
-      const zxing = await import("@zxing/library");
-      const { BarcodeFormat, DecodeHintType } = zxing;
-      if (cancelled) return;
-
-      const hints = new Map();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-        BarcodeFormat.EAN_13,
-        BarcodeFormat.EAN_8,
-        BarcodeFormat.UPC_A,
-        BarcodeFormat.UPC_E,
-        BarcodeFormat.CODE_128,
-        BarcodeFormat.ITF,
-      ]);
-      // NOTE: TRY_HARDER causes zxing to attempt rotated decodes, which spams
-      // "Could not create a Canvas element" errors and hurts perf on mobile.
-      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 150 });
-
       try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setError("This browser can't access the camera. Enter the barcode number below.");
+          return;
+        }
+
         let stream: MediaStream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
@@ -65,6 +67,10 @@ export function BarcodeScanner({
           });
         } catch {
           stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
         activeStream = stream;
         const video = videoRef.current;
@@ -75,27 +81,65 @@ export function BarcodeScanner({
         video.srcObject = stream;
         await video.play().catch(() => {});
 
-        controls = await reader.decodeFromVideoElement(video, (result) => {
-          if (result && !detectedRef.current) {
-            const code = result.getText().trim();
-            if (!isValidGtin(code)) return;
-            detectedRef.current = true;
-            try { navigator.vibrate?.(60); } catch { /* ignore */ }
-            setFlash(true);
-            onDetected(code);
-          }
-        });
         const track = stream.getVideoTracks()[0] ?? null;
         trackRef.current = track;
         const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
         if (caps.torch) setTorchSupported(true);
+
+        // 1) Native detector (Chrome/Android) — far more reliable and much faster.
+        const Detector = (window as unknown as {
+          BarcodeDetector?: new (o?: { formats?: string[] }) => { detect: (s: CanvasImageSource) => Promise<{ rawValue: string }[]> };
+        }).BarcodeDetector;
+
+        if (Detector) {
+          const detector = new Detector({
+            formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "itf"],
+          });
+          const tick = async () => {
+            if (cancelled || detectedRef.current) return;
+            try {
+              const codes = await detector.detect(video);
+              if (codes.length > 0) accept(codes[0].rawValue);
+            } catch { /* frame not ready */ }
+            if (!cancelled && !detectedRef.current) rafId = requestAnimationFrame(() => void tick());
+          };
+          void tick();
+          return;
+        }
+
+        // 2) ZXing fallback (iOS Safari, Firefox).
+        const { BarcodeFormat, DecodeHintType } = await import("@zxing/library");
+        if (cancelled) return;
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.ITF,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
+        const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 100 });
+        controls = await reader.decodeFromVideoElement(video, (result) => {
+          if (result) accept(result.getText());
+        });
       } catch (err) {
         console.error("Camera error", err);
+        const name = (err as { name?: string })?.name;
+        setError(
+          name === "NotAllowedError"
+            ? "Camera access was blocked. Allow camera in your browser settings, or type the barcode below."
+            : name === "NotFoundError"
+              ? "No camera found on this device. Type the barcode number below."
+              : "Couldn't start the camera. Type the barcode number below.",
+        );
       }
     })();
 
     return () => {
       cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
       controls?.stop();
       activeStream?.getTracks().forEach((t) => t.stop());
       trackRef.current = null;
@@ -138,17 +182,44 @@ export function BarcodeScanner({
         </div>
       </div>
       <div className="relative flex-1 overflow-hidden">
-        <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+        <video ref={videoRef} className="h-full w-full object-cover" playsInline muted autoPlay />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="relative h-40 w-72 max-w-[80vw] rounded-2xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
             <div className="absolute inset-x-0 top-1/2 h-px animate-pulse bg-primary" />
           </div>
         </div>
         {flash && <div className="pointer-events-none absolute inset-0 animate-fade-in bg-primary/30" />}
+        {error && (
+          <div className="absolute inset-x-0 bottom-0 bg-black/70 p-4 text-center text-sm text-white">{error}</div>
+        )}
       </div>
-      <p className="p-4 text-center text-xs text-white/70">
-        Hold steady, 6–10 inches away. Good lighting helps a lot.
-      </p>
+      <div className="space-y-3 p-4">
+        <p className="text-center text-xs text-white/70">
+          Hold steady, 6–10 inches away. Good lighting helps a lot.
+        </p>
+        <form
+          className="mx-auto flex max-w-sm items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const code = manual.trim();
+            if (!isValidGtin(code)) return;
+            detectedRef.current = true;
+            onDetected(code);
+          }}
+        >
+          <Input
+            value={manual}
+            onChange={(e) => setManual(e.target.value.replace(/\D/g, ""))}
+            inputMode="numeric"
+            maxLength={14}
+            placeholder="Or type the barcode digits"
+            className="border-white/20 bg-white/10 text-white placeholder:text-white/50"
+          />
+          <Button type="submit" size="sm" disabled={!isValidGtin(manual.trim())}>
+            <Keyboard className="mr-2 h-4 w-4" /> Use
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }
