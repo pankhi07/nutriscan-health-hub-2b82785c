@@ -23,11 +23,17 @@ function ForgotPage() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + "/reset-password",
+        redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (error) throw error;
+      if (error) {
+        console.error("Password reset error", error);
+        if (/rate limit|too many/i.test(error.message)) {
+          throw new Error("Too many reset emails were sent recently. Please wait a few minutes and try again.");
+        }
+        throw error;
+      }
       setSent(true);
-      toast.success("Check your email for the reset link.");
+      toast.success("If that email has an account, a reset link is on its way.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
