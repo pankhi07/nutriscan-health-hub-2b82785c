@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
 
-export const Route = createFileRoute("/auth/forgot-password")({
+export const Route = createFileRoute("/auth_/forgot-password")({
   head: () => ({ meta: [{ title: "Forgot password — NutriScan" }] }),
   component: ForgotPage,
 });
