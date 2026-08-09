@@ -8,6 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
 
+// Preview/editor hosts (id-preview--*.lovable.app) sit behind Lovable's
+// workspace auth, so a reset link pointing there asks normal users to sign in
+// to Lovable. Always send recovery links to the public published app.
+const PUBLIC_APP_ORIGIN = "https://nutri-vision-score.lovable.app";
+
+function resetRedirectOrigin() {
+  const { origin, hostname } = window.location;
+  const isPreview =
+    hostname.includes("-preview--") ||
+    hostname.endsWith(".lovableproject.com") ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1";
+  return isPreview ? PUBLIC_APP_ORIGIN : origin;
+}
+
 export const Route = createFileRoute("/auth_/forgot-password")({
   head: () => ({ meta: [{ title: "Forgot password — NutriScan" }] }),
   component: ForgotPage,
@@ -23,7 +38,7 @@ function ForgotPage() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${resetRedirectOrigin()}/reset-password`,
       });
       if (error) {
         console.error("Password reset error", error);
